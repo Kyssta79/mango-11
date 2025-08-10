@@ -19,7 +19,7 @@ public class SpectateCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player)) {
-            sender.sendMessage("§cThis command can only be used by players!");
+            sender.sendMessage("§cOnly players can use this command!");
             return true;
         }
         
@@ -36,6 +36,11 @@ public class SpectateCommand implements CommandExecutor {
             return true;
         }
         
+        if (target.equals(player)) {
+            player.sendMessage("§cYou cannot spectate yourself!");
+            return true;
+        }
+        
         // Check if target is in a match
         Match targetMatch = plugin.getMatchManager().getPlayerMatch(target);
         if (targetMatch == null) {
@@ -44,22 +49,26 @@ public class SpectateCommand implements CommandExecutor {
         }
         
         // Check if target is alive in the match
-        if (!targetMatch.isPlayerAlive(target.getUniqueId())) {
-            player.sendMessage("§cThat player is not alive!");
+        if (!targetMatch.isPlayerAlive(target)) {
+            player.sendMessage("§cThat player is not alive in their match!");
             return true;
         }
         
-        // If spectator is already in a match, check if it's the same match
+        // Check if spectator is in a different match (prevent cheating)
         Match spectatorMatch = plugin.getMatchManager().getPlayerMatch(player);
-        if (spectatorMatch != null && !spectatorMatch.getId().equals(targetMatch.getId())) {
-            player.sendMessage("§cYou can only spectate players in your own match!");
+        if (spectatorMatch != null && !spectatorMatch.equals(targetMatch)) {
+            player.sendMessage("§cYou cannot spectate players in other matches while you're in a match!");
             return true;
         }
         
-        // Teleport to target and set spectator mode
-        player.teleport(target.getLocation());
+        // If spectator is in the same match, they can spectate
+        // If spectator is not in any match, they can spectate anyone
+        
+        // Set spectator mode
         player.setGameMode(GameMode.SPECTATOR);
-        player.sendMessage("§aNow spectating " + target.getName());
+        player.teleport(target.getLocation());
+        
+        player.sendMessage("§aYou are now spectating " + target.getName());
         
         return true;
     }

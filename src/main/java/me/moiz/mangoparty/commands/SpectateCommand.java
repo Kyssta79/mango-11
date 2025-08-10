@@ -49,7 +49,7 @@ public class SpectateCommand implements CommandExecutor {
         }
         
         // Check if target is alive in the match
-        if (!targetMatch.isPlayerAlive(target)) {
+        if (!targetMatch.isPlayerAlive(target.getUniqueId())) {
             player.sendMessage("§cThat player is not alive in their match!");
             return true;
         }

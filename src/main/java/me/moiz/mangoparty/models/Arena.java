@@ -6,7 +6,7 @@ import java.util.List;
 
 public class Arena {
     private String name;
-    private String world;
+    private String worldName;
     private Location corner1;
     private Location corner2;
     private Location center;
@@ -14,28 +14,34 @@ public class Arena {
     private Location spawn2;
     private List<String> allowedKits;
     private boolean isInstance;
-    private String originalArena;
+    private String baseArena;
     private int instanceNumber;
     private double xOffset;
     private double zOffset;
+    private boolean inUse;
     
-    public Arena(String name, String world) {
+    public Arena(String name, String worldName) {
         this.name = name;
-        this.world = world;
+        this.worldName = worldName;
         this.allowedKits = new ArrayList<>();
         this.isInstance = false;
-        this.originalArena = null;
+        this.baseArena = null;
         this.instanceNumber = 0;
         this.xOffset = 0;
         this.zOffset = 0;
+        this.inUse = false;
     }
     
     public String getName() {
         return name;
     }
     
+    public String getWorldName() {
+        return worldName;
+    }
+    
     public String getWorld() {
-        return world;
+        return worldName;
     }
     
     public Location getCorner1() {
@@ -113,12 +119,20 @@ public class Arena {
         isInstance = instance;
     }
     
+    public String getBaseArena() {
+        return baseArena;
+    }
+    
+    public void setBaseArena(String baseArena) {
+        this.baseArena = baseArena;
+    }
+    
     public String getOriginalArena() {
-        return originalArena;
+        return baseArena;
     }
     
     public void setOriginalArena(String originalArena) {
-        this.originalArena = originalArena;
+        this.baseArena = originalArena;
     }
     
     public int getInstanceNumber() {
@@ -143,6 +157,14 @@ public class Arena {
     
     public void setZOffset(double zOffset) {
         this.zOffset = zOffset;
+    }
+    
+    public boolean isInUse() {
+        return inUse;
+    }
+    
+    public void setInUse(boolean inUse) {
+        this.inUse = inUse;
     }
     
     // Calculate relative offsets from center

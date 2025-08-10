@@ -22,7 +22,7 @@ import java.util.Map;
 
 public class AllowedKitsGui implements Listener {
     private MangoParty plugin;
-    private YamlConfiguration allowedKitsConfig;
+    private YamlConfiguration config;
     
     public AllowedKitsGui(MangoParty plugin) {
         this.plugin = plugin;
@@ -36,13 +36,12 @@ public class AllowedKitsGui implements Listener {
             guiDir.mkdirs();
         }
         
-        File allowedKitsFile = new File(guiDir, "allowed_kits.yml");
-        
-        if (!allowedKitsFile.exists()) {
+        File configFile = new File(guiDir, "allowed_kits.yml");
+        if (!configFile.exists()) {
             plugin.saveResource("gui/allowed_kits.yml", false);
         }
         
-        allowedKitsConfig = YamlConfiguration.loadConfiguration(allowedKitsFile);
+        config = YamlConfiguration.loadConfiguration(configFile);
     }
     
     public void openAllowedKitsGui(Player player, String arenaName) {
@@ -52,56 +51,52 @@ public class AllowedKitsGui implements Listener {
             return;
         }
         
-        String title = allowedKitsConfig.getString("title", "§6Allowed Kits").replace("{arena_name}", arenaName);
-        int size = allowedKitsConfig.getInt("size", 54);
+        String title = config.getString("title", "§6Allowed Kits").replace("{arena}", arenaName);
+        int size = config.getInt("size", 54);
         
         Inventory gui = Bukkit.createInventory(null, size, title);
         
-        // Add all available kits with toggle status
-        Map<String, Kit> availableKits = plugin.getKitManager().getKits();
+        Map<String, Kit> allKits = plugin.getKitManager().getKits();
         int slot = 0;
         
-        for (Kit kit : availableKits.values()) {
-            if (slot >= size - 9) break; // Reserve bottom row for controls
+        for (Kit kit : allKits.values()) {
+            if (slot >= size) break;
             
-            ItemStack item = createKitToggleItem(kit, arena);
+            ItemStack item = createKitItem(kit, arena);
             gui.setItem(slot, item);
             slot++;
-        }
-        
-        // Add back button
-        ConfigurationSection backButtonConfig = allowedKitsConfig.getConfigurationSection("buttons.back");
-        if (backButtonConfig != null) {
-            ItemStack backButton = new ItemStack(Material.valueOf(backButtonConfig.getString("material")));
-            ItemMeta meta = backButton.getItemMeta();
-            meta.setDisplayName(backButtonConfig.getString("name"));
-            meta.setLore(backButtonConfig.getStringList("lore"));
-            
-            int customModelData = backButtonConfig.getInt("customModelData");
-            if (customModelData > 0) {
-                meta.setCustomModelData(customModelData);
-            }
-            
-            backButton.setItemMeta(meta);
-            gui.setItem(backButtonConfig.getInt("slot"), backButton);
         }
         
         player.openInventory(gui);
     }
     
-    private ItemStack createKitToggleItem(Kit kit, Arena arena) {
+    private ItemStack createKitItem(Kit kit, Arena arena) {
         boolean isAllowed = arena.isKitAllowed(kit.getName());
         
-        ItemStack item = kit.getIcon() != null ? kit.getIcon().clone() : new ItemStack(Material.IRON_SWORD);
+        ConfigurationSection kitConfig = config.getConfigurationSection("kit_item");
+        
+        String materialKey = isAllowed ? "material_enabled" : "material_disabled";
+        String nameKey = isAllowed ? "name_enabled" : "name_disabled";
+        String loreKey = isAllowed ? "lore_enabled" : "lore_disabled";
+        
+        Material material = Material.valueOf(kitConfig.getString(materialKey, "IRON_SWORD"));
+        ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         
-        meta.setDisplayName((isAllowed ? "§a" : "§c") + kit.getDisplayName());
+        String name = kitConfig.getString(nameKey, "§a{kit_name}");
+        name = name.replace("{kit_name}", kit.getDisplayName());
+        meta.setDisplayName(name);
         
-        List<String> lore = new ArrayList<>();
-        lore.add(isAllowed ? "§aEnabled for this arena" : "§cDisabled for this arena");
-        lore.add("§7");
-        lore.add("§eClick to " + (isAllowed ? "disable" : "enable") + " this kit");
+        List<String> lore = new ArrayList<>(kitConfig.getStringList(loreKey));
+        for (int i = 0; i < lore.size(); i++) {
+            lore.set(i, lore.get(i).replace("{kit_name}", kit.getDisplayName()));
+        }
         meta.setLore(lore);
+        
+        int customModelData = kitConfig.getInt("customModelData", 0);
+        if (customModelData > 0) {
+            meta.setCustomModelData(customModelData);
+        }
         
         item.setItemMeta(meta);
         return item;
@@ -114,65 +109,51 @@ public class AllowedKitsGui implements Listener {
         Player player = (Player) event.getWhoClicked();
         String title = event.getView().getTitle();
         
-        // Check if this is an allowed kits GUI
-        String configTitle = allowedKitsConfig.getString("title", "§6Allowed Kits");
-        String titlePrefix = configTitle.split(" - ")[0];
-        
-        if (!title.startsWith(titlePrefix)) {
-            return;
-        }
+        if (!title.startsWith(config.getString("title", "§6Allowed Kits").split(" ")[0])) return;
         
         event.setCancelled(true);
-        
-        String arenaName = extractArenaNameFromTitle(title);
-        if (arenaName == null) {
-            plugin.getLogger().warning("Could not extract arena name from title: " + title);
-            return;
-        }
-        
-        Arena arena = plugin.getArenaManager().getArena(arenaName);
-        if (arena == null) {
-            player.sendMessage("§cArena not found: " + arenaName);
-            return;
-        }
         
         ItemStack clicked = event.getCurrentItem();
         if (clicked == null || clicked.getType() == Material.AIR) return;
         
-        // Handle back button
-        ConfigurationSection backButtonConfig = allowedKitsConfig.getConfigurationSection("buttons.back");
-        if (backButtonConfig != null && event.getSlot() == backButtonConfig.getInt("slot")) {
-            plugin.getArenaEditorGui().openArenaEditorGui(player, arenaName);
-            return;
+        String arenaName = extractArenaName(title);
+        if (arenaName == null) return;
+        
+        Arena arena = plugin.getArenaManager().getArena(arenaName);
+        if (arena == null) return;
+        
+        String kitName = extractKitName(clicked);
+        if (kitName == null) return;
+        
+        Kit kit = plugin.getKitManager().getKit(kitName);
+        if (kit == null) return;
+        
+        // Toggle kit allowance
+        boolean wasAllowed = arena.isKitAllowed(kit.getName());
+        if (wasAllowed) {
+            arena.removeAllowedKit(kit.getName());
+            player.sendMessage("§cDisabled kit: " + kit.getDisplayName() + " for arena: " + arenaName);
+            plugin.getLogger().info("Player " + player.getName() + " disabled kit " + kit.getName() + " for arena " + arenaName);
+        } else {
+            arena.addAllowedKit(kit.getName());
+            player.sendMessage("§aEnabled kit: " + kit.getDisplayName() + " for arena: " + arenaName);
+            plugin.getLogger().info("Player " + player.getName() + " enabled kit " + kit.getName() + " for arena " + arenaName);
         }
         
-        // Handle kit toggle
-        String kitName = extractKitName(clicked);
-        if (kitName != null) {
-            boolean wasAllowed = arena.isKitAllowed(kitName);
-            toggleKitAllowed(arena, kitName);
-            
-            // Save the arena immediately
-            plugin.getArenaManager().saveArena(arena);
-            
-            // Log the change
-            plugin.getLogger().info("Player " + player.getName() + " " + 
-                (wasAllowed ? "disabled" : "enabled") + " kit " + kitName + 
-                " for arena " + arenaName);
-            
-            // Refresh the GUI to show the change
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                openAllowedKitsGui(player, arenaName);
-            }, 1L);
-        }
+        // Save the arena immediately
+        plugin.getArenaManager().saveArena(arena);
+        plugin.getLogger().info("Saved arena " + arenaName + " with updated kit allowances");
+        
+        // Refresh the GUI after a short delay to show the updated state
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            openAllowedKitsGui(player, arenaName);
+        }, 1L);
     }
     
-    private String extractArenaNameFromTitle(String title) {
-        String configTitle = allowedKitsConfig.getString("title", "§6Allowed Kits - {arena_name}");
-        String prefix = configTitle.replace(" - {arena_name}", "");
-        
-        if (title.startsWith(prefix + " - ")) {
-            return title.substring((prefix + " - ").length());
+    private String extractArenaName(String title) {
+        String prefix = config.getString("title", "§6Allowed Kits").replace("{arena}", "");
+        if (title.startsWith(prefix)) {
+            return title.substring(prefix.length()).trim();
         }
         return null;
     }
@@ -188,19 +169,11 @@ public class AllowedKitsGui implements Listener {
         
         // Try to find kit by display name
         for (Kit kit : plugin.getKitManager().getKits().values()) {
-            if (displayName.equals(kit.getDisplayName())) {
+            if (displayName.contains(kit.getDisplayName()) || displayName.contains(kit.getName())) {
                 return kit.getName();
             }
         }
         
         return null;
-    }
-    
-    private void toggleKitAllowed(Arena arena, String kitName) {
-        if (arena.isKitAllowed(kitName)) {
-            arena.removeAllowedKit(kitName);
-        } else {
-            arena.addAllowedKit(kitName);
-        }
     }
 }

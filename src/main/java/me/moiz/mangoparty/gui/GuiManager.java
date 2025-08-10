@@ -350,6 +350,9 @@ public class GuiManager implements Listener {
         Player player = (Player) event.getWhoClicked();
         String title = event.getView().getTitle();
         
+        // Debug logging
+        plugin.getLogger().info("Inventory click - Player: " + player.getName() + ", Title: " + title + ", Slot: " + event.getSlot());
+        
         if (title.equals("§6Select Match Type")) {
             event.setCancelled(true);
             
@@ -394,12 +397,15 @@ public class GuiManager implements Listener {
             ItemStack clicked = event.getCurrentItem();
             if (clicked == null || clicked.getType() == Material.AIR) return;
             
+            plugin.getLogger().info("Kit GUI click detected - Title: " + title);
+            
             // Handle different types of kit selection
             if (title.contains("1V1") || title.contains("2V2") || title.contains("3V3")) {
                 handleQueueKitSelection(player, title, event.getSlot());
             } else if (title.contains("Party Duel")) {
                 handlePartyDuelKitSelection(player, event.getSlot());
             } else if (title.contains("Split") || title.contains("FFA")) {
+                plugin.getLogger().info("Handling regular kit selection");
                 handleRegularKitSelection(player, title, event.getSlot());
             }
         }
@@ -451,7 +457,6 @@ public class GuiManager implements Listener {
     }
 
     private void handleRegularKitSelection(Player player, String title, int slot) {
-        // Debug logging
         plugin.getLogger().info("Kit selection - Player: " + player.getName() + ", Title: " + title + ", Slot: " + slot);
         
         String matchType = title.contains("Split") ? "split" : "ffa";

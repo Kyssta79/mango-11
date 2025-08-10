@@ -2,6 +2,7 @@ package me.moiz.mangoparty.gui;
 
 import me.moiz.mangoparty.MangoParty;
 import me.moiz.mangoparty.models.Arena;
+import me.moiz.mangoparty.models.Kit;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -11,58 +12,157 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.block.Action;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 public class ArenaEditorGui implements Listener {
     private MangoParty plugin;
-    private YamlConfiguration arenaListConfig;
-    private YamlConfiguration arenaEditorConfig;
-    private Map<UUID, String> pendingLocationSets;
-    private Map<UUID, String> pendingArenas;
+    private YamlConfiguration config;
     
     public ArenaEditorGui(MangoParty plugin) {
         this.plugin = plugin;
-        this.pendingLocationSets = new HashMap<>();
-        this.pendingArenas = new HashMap<>();
-        loadConfigs();
+        loadConfig();
         Bukkit.getPluginManager().registerEvents(this, plugin);
     }
     
-    private void loadConfigs() {
-        File guiDir = new File(plugin.getDataFolder(), "gui");
-        if (!guiDir.exists()) {
-            guiDir.mkdirs();
-        }
-        
-        File arenaListFile = new File(guiDir, "arena_list.yml");
-        File arenaEditorFile = new File(guiDir, "arena_editor.yml");
-        
-        if (!arenaListFile.exists()) {
-            plugin.saveResource("gui/arena_list.yml", false);
-        }
-        if (!arenaEditorFile.exists()) {
+    private void loadConfig() {
+        File configFile = new File(plugin.getDataFolder(), "gui/arena_editor.yml");
+        if (!configFile.exists()) {
             plugin.saveResource("gui/arena_editor.yml", false);
         }
-        
-        arenaListConfig = YamlConfiguration.loadConfiguration(arenaListFile);
-        arenaEditorConfig = YamlConfiguration.loadConfiguration(arenaEditorFile);
+        config = YamlConfiguration.loadConfiguration(configFile);
     }
     
-    public void openArenaListGui(Player player) {
-        String title = arenaListConfig.getString("title", "§6Arena Manager");
-        int size = arenaListConfig.getInt("size", 54);
+    public void openArenaEditor(Player player, Arena arena) {
+        String title = config.getString("title", "§6Arena Editor").replace("{arena}", arena.getName());
+        int size = config.getInt("size", 54);
+        
+        Inventory gui = Bukkit.createInventory(null, size, title);
+        
+        // Arena info item
+        ItemStack infoItem = new ItemStack(Material.PAPER);
+        ItemMeta infoMeta = infoItem.getItemMeta();
+        infoMeta.setDisplayName("§eArena Information");
+        List<String> infoLore = new ArrayList<>();
+        infoLore.add("§7Name: §f" + arena.getName());
+        infoLore.add("§7Complete: " + (arena.isComplete() ? "§aYes" : "§cNo"));
+        infoLore.add("§7Spawn 1: " + (arena.getSpawn1() != null ? "§aSet" : "§cNot Set"));
+        infoLore.add("§7Spawn 2: " + (arena.getSpawn2() != null ? "§aSet" : "§cNot Set"));
+        infoLore.add("§7Center: " + (arena.getCenter() != null ? "§aSet" : "§cNot Set"));
+        infoLore.add("§7Min Corner: " + (arena.getMinCorner() != null ? "§aSet" : "§cNot Set"));
+        infoLore.add("§7Max Corner: " + (arena.getMaxCorner() != null ? "§aSet" : "§cNot Set"));
+        infoMeta.setLore(infoLore);
+        infoItem.setItemMeta(infoMeta);
+        gui.setItem(4, infoItem);
+        
+        // Set spawn 1 button
+        ItemStack spawn1Item = new ItemStack(Material.RED_BED);
+        ItemMeta spawn1Meta = spawn1Item.getItemMeta();
+        spawn1Meta.setDisplayName("§cSet Spawn 1");
+        List<String> spawn1Lore = new ArrayList<>();
+        spawn1Lore.add("§7Click to set spawn point 1");
+        spawn1Lore.add("§7to your current location");
+        spawn1Meta.setLore(spawn1Lore);
+        spawn1Item.setItemMeta(spawn1Meta);
+        gui.setItem(19, spawn1Item);
+        
+        // Set spawn 2 button
+        ItemStack spawn2Item = new ItemStack(Material.BLUE_BED);
+        ItemMeta spawn2Meta = spawn2Item.getItemMeta();
+        spawn2Meta.setDisplayName("§9Set Spawn 2");
+        List<String> spawn2Lore = new ArrayList<>();
+        spawn2Lore.add("§7Click to set spawn point 2");
+        spawn2Lore.add("§7to your current location");
+        spawn2Meta.setLore(spawn2Lore);
+        spawn2Item.setItemMeta(spawn2Meta);
+        gui.setItem(21, spawn2Item);
+        
+        // Set center button
+        ItemStack centerItem = new ItemStack(Material.BEACON);
+        ItemMeta centerMeta = centerItem.getItemMeta();
+        centerMeta.setDisplayName("§eSet Center");
+        List<String> centerLore = new ArrayList<>();
+        centerLore.add("§7Click to set center point");
+        centerLore.add("§7to your current location");
+        centerMeta.setLore(centerLore);
+        centerItem.setItemMeta(centerMeta);
+        gui.setItem(22, centerItem);
+        
+        // Set min corner button
+        ItemStack minItem = new ItemStack(Material.STONE_BUTTON);
+        ItemMeta minMeta = minItem.getItemMeta();
+        minMeta.setDisplayName("§7Set Min Corner");
+        List<String> minLore = new ArrayList<>();
+        minLore.add("§7Click to set minimum corner");
+        minLore.add("§7to your current location");
+        minMeta.setLore(minLore);
+        minItem.setItemMeta(minMeta);
+        gui.setItem(37, minItem);
+        
+        // Set max corner button
+        ItemStack maxItem = new ItemStack(Material.STONE_BUTTON);
+        ItemMeta maxMeta = maxItem.getItemMeta();
+        maxMeta.setDisplayName("§fSet Max Corner");
+        List<String> maxLore = new ArrayList<>();
+        maxLore.add("§7Click to set maximum corner");
+        maxLore.add("§7to your current location");
+        maxMeta.setLore(maxLore);
+        maxItem.setItemMeta(maxMeta);
+        gui.setItem(43, maxItem);
+        
+        // Allowed kits button
+        ItemStack kitsItem = new ItemStack(Material.CHEST);
+        ItemMeta kitsMeta = kitsItem.getItemMeta();
+        kitsMeta.setDisplayName("§6Manage Allowed Kits");
+        List<String> kitsLore = new ArrayList<>();
+        kitsLore.add("§7Click to manage which kits");
+        kitsLore.add("§7are allowed in this arena");
+        kitsLore.add("§7Currently allowed: §f" + arena.getAllowedKits().size());
+        kitsMeta.setLore(kitsLore);
+        kitsItem.setItemMeta(kitsMeta);
+        gui.setItem(31, kitsItem);
+        
+        // Save button
+        ItemStack saveItem = new ItemStack(Material.EMERALD);
+        ItemMeta saveMeta = saveItem.getItemMeta();
+        saveMeta.setDisplayName("§aSave Arena");
+        List<String> saveLore = new ArrayList<>();
+        saveLore.add("§7Click to save all changes");
+        saveLore.add("§7to this arena");
+        saveMeta.setLore(saveLore);
+        saveItem.setItemMeta(saveMeta);
+        gui.setItem(45, saveItem);
+        
+        // Delete button
+        ItemStack deleteItem = new ItemStack(Material.REDSTONE);
+        ItemMeta deleteMeta = deleteItem.getItemMeta();
+        deleteMeta.setDisplayName("§cDelete Arena");
+        List<String> deleteLore = new ArrayList<>();
+        deleteLore.add("§7Click to delete this arena");
+        deleteLore.add("§c§lWARNING: This cannot be undone!");
+        deleteMeta.setLore(deleteLore);
+        deleteItem.setItemMeta(deleteMeta);
+        gui.setItem(53, deleteItem);
+        
+        // Back button
+        ItemStack backItem = new ItemStack(Material.ARROW);
+        ItemMeta backMeta = backItem.getItemMeta();
+        backMeta.setDisplayName("§7Back to Arena List");
+        backItem.setItemMeta(backMeta);
+        gui.setItem(49, backItem);
+        
+        player.openInventory(gui);
+    }
+    
+    public void openArenaList(Player player) {
+        String title = "§6Arena List";
+        int size = 54;
         
         Inventory gui = Bukkit.createInventory(null, size, title);
         
@@ -70,141 +170,35 @@ public class ArenaEditorGui implements Listener {
         int slot = 0;
         
         for (Arena arena : arenas.values()) {
-            if (slot >= size) break;
+            if (slot >= 45) break; // Leave space for navigation
             
-            ItemStack item = createArenaItem(arena);
-            gui.setItem(slot, item);
+            ItemStack arenaItem = new ItemStack(arena.isComplete() ? Material.GREEN_WOOL : Material.RED_WOOL);
+            ItemMeta meta = arenaItem.getItemMeta();
+            meta.setDisplayName("§e" + arena.getName());
+            
+            List<String> lore = new ArrayList<>();
+            lore.add("§7Status: " + (arena.isComplete() ? "§aComplete" : "§cIncomplete"));
+            lore.add("§7Allowed Kits: §f" + arena.getAllowedKits().size());
+            lore.add("§7");
+            lore.add("§eClick to edit this arena");
+            meta.setLore(lore);
+            
+            arenaItem.setItemMeta(meta);
+            gui.setItem(slot, arenaItem);
             slot++;
         }
         
-        player.openInventory(gui);
-    }
-    
-    private ItemStack createArenaItem(Arena arena) {
-        ConfigurationSection arenaConfig = arenaListConfig.getConfigurationSection("arenas." + arena.getName());
-        ConfigurationSection defaultConfig = arenaListConfig.getConfigurationSection("default");
-        
-        String materialName = arenaConfig != null ? arenaConfig.getString("material") : defaultConfig.getString("material");
-        Material material = Material.valueOf(materialName);
-        
-        ItemStack item = new ItemStack(material);
-        ItemMeta meta = item.getItemMeta();
-        
-        String name = arenaConfig != null ? arenaConfig.getString("name") : defaultConfig.getString("name");
-        name = name.replace("{arena_name}", arena.getName());
-        meta.setDisplayName(name);
-        
-        List<String> lore = arenaConfig != null ? arenaConfig.getStringList("lore") : defaultConfig.getStringList("lore");
-        List<String> processedLore = new ArrayList<>();
-        for (String line : lore) {
-            line = line.replace("{arena_name}", arena.getName());
-            line = line.replace("{status}", arena.isComplete() ? "§aComplete" : "§cIncomplete");
-            processedLore.add(line);
-        }
-        meta.setLore(processedLore);
-        
-        int customModelData = arenaConfig != null ? arenaConfig.getInt("customModelData") : defaultConfig.getInt("customModelData");
-        if (customModelData > 0) {
-            meta.setCustomModelData(customModelData);
-        }
-        
-        item.setItemMeta(meta);
-        return item;
-    }
-    
-    public void openArenaEditorGui(Player player, String arenaName) {
-        Arena arena = plugin.getArenaManager().getArena(arenaName);
-        if (arena == null) {
-            player.sendMessage("§cArena not found!");
-            return;
-        }
-        
-        String title = arenaEditorConfig.getString("title", "§6Arena Editor").replace("{arena_name}", arenaName);
-        int size = arenaEditorConfig.getInt("size", 27);
-        
-        Inventory gui = Bukkit.createInventory(null, size, title);
-        
-        ConfigurationSection buttons = arenaEditorConfig.getConfigurationSection("buttons");
-        if (buttons != null) {
-            for (String buttonKey : buttons.getKeys(false)) {
-                ConfigurationSection buttonConfig = buttons.getConfigurationSection(buttonKey);
-                ItemStack item = createEditorButton(buttonConfig, buttonKey, arena);
-                gui.setItem(buttonConfig.getInt("slot"), item);
-            }
-        }
+        // Create new arena button
+        ItemStack createItem = new ItemStack(Material.LIME_WOOL);
+        ItemMeta createMeta = createItem.getItemMeta();
+        createMeta.setDisplayName("§aCreate New Arena");
+        List<String> createLore = new ArrayList<>();
+        createLore.add("§7Click to create a new arena");
+        createMeta.setLore(createLore);
+        createItem.setItemMeta(createMeta);
+        gui.setItem(49, createItem);
         
         player.openInventory(gui);
-    }
-    
-    private ItemStack createEditorButton(ConfigurationSection config, String buttonKey, Arena arena) {
-        Material material = Material.valueOf(config.getString("material"));
-        ItemStack item = new ItemStack(material);
-        ItemMeta meta = item.getItemMeta();
-        
-        String name = config.getString("name");
-        meta.setDisplayName(name);
-        
-        List<String> lore = new ArrayList<>(config.getStringList("lore"));
-        for (int i = 0; i < lore.size(); i++) {
-            String line = lore.get(i);
-            line = processStatusPlaceholder(line, buttonKey, arena);
-            lore.set(i, line);
-        }
-        meta.setLore(lore);
-        
-        int customModelData = config.getInt("customModelData");
-        if (customModelData > 0) {
-            meta.setCustomModelData(customModelData);
-        }
-        
-        item.setItemMeta(meta);
-        return item;
-    }
-    
-    private String processStatusPlaceholder(String line, String buttonKey, Arena arena) {
-        switch (buttonKey) {
-            case "spawn1":
-                if (line.contains("{spawn1_status}")) {
-                    return line.replace("{spawn1_status}", arena.getSpawn1() != null ? "§aSet" : "§cNot Set");
-                } else if (line.contains("{spawn1_coords}") && arena.getSpawn1() != null) {
-                    return line.replace("{spawn1_coords}", String.format("§7X: %.1f, Y: %.1f, Z: %.1f", 
-                            arena.getSpawn1().getX(), arena.getSpawn1().getY(), arena.getSpawn1().getZ()));
-                }
-                break;
-            case "spawn2":
-                if (line.contains("{spawn2_status}")) {
-                    return line.replace("{spawn2_status}", arena.getSpawn2() != null ? "§aSet" : "§cNot Set");
-                } else if (line.contains("{spawn2_coords}") && arena.getSpawn2() != null) {
-                    return line.replace("{spawn2_coords}", String.format("§7X: %.1f, Y: %.1f, Z: %.1f", 
-                            arena.getSpawn2().getX(), arena.getSpawn2().getY(), arena.getSpawn2().getZ()));
-                }
-                break;
-            case "center":
-                if (line.contains("{center_status}")) {
-                    return line.replace("{center_status}", arena.getCenter() != null ? "§aSet" : "§cNot Set");
-                } else if (line.contains("{center_coords}") && arena.getCenter() != null) {
-                    return line.replace("{center_coords}", String.format("§7X: %.1f, Y: %.1f, Z: %.1f", 
-                            arena.getCenter().getX(), arena.getCenter().getY(), arena.getCenter().getZ()));
-                }
-                break;
-            case "corner1":
-                if (line.contains("{corner1_status}")) {
-                    return line.replace("{corner1_status}", arena.getCorner1() != null ? "§aSet" : "§cNot Set");
-                } else if (line.contains("{corner1_coords}") && arena.getCorner1() != null) {
-                    return line.replace("{corner1_coords}", String.format("§7X: %.1f, Y: %.1f, Z: %.1f", 
-                            arena.getCorner1().getX(), arena.getCorner1().getY(), arena.getCorner1().getZ()));
-                }
-                break;
-            case "corner2":
-                if (line.contains("{corner2_status}")) {
-                    return line.replace("{corner2_status}", arena.getCorner2() != null ? "§aSet" : "§cNot Set");
-                } else if (line.contains("{corner2_coords}") && arena.getCorner2() != null) {
-                    return line.replace("{corner2_coords}", String.format("§7X: %.1f, Y: %.1f, Z: %.1f", 
-                            arena.getCorner2().getX(), arena.getCorner2().getY(), arena.getCorner2().getZ()));
-                }
-                break;
-        }
-        return line;
     }
     
     @EventHandler
@@ -214,154 +208,107 @@ public class ArenaEditorGui implements Listener {
         Player player = (Player) event.getWhoClicked();
         String title = event.getView().getTitle();
         
-        if (title.equals(arenaListConfig.getString("title", "§6Arena Manager"))) {
+        if (title.equals("§6Arena List")) {
             event.setCancelled(true);
-            
-            ItemStack clicked = event.getCurrentItem();
-            if (clicked == null || clicked.getType() == Material.AIR) return;
-            
-            String arenaName = extractArenaName(clicked);
-            if (arenaName != null) {
-                openArenaEditorGui(player, arenaName);
-            }
-        } else if (title.startsWith(arenaEditorConfig.getString("title", "§6Arena Editor").split(" - ")[0])) {
+            handleArenaListClick(player, event);
+        } else if (title.contains("Arena Editor")) {
             event.setCancelled(true);
-            
-            String arenaName = extractArenaNameFromTitle(title);
-            if (arenaName == null) return;
-            
-            ItemStack clicked = event.getCurrentItem();
-            if (clicked == null || clicked.getType() == Material.AIR) return;
-            
-            String buttonType = identifyButton(event.getSlot());
-            if (buttonType != null) {
-                handleEditorButtonClick(player, arenaName, buttonType);
-            }
+            handleEditorClick(player, event, title);
         }
     }
     
-    private String extractArenaName(ItemStack item) {
-        if (item.hasItemMeta() && item.getItemMeta().hasLore()) {
-            // Extract arena name from item display name or lore
-            String displayName = item.getItemMeta().getDisplayName();
-            // Simple extraction - you might want to improve this
-            for (Arena arena : plugin.getArenaManager().getArenas().values()) {
-                if (displayName.contains(arena.getName())) {
-                    return arena.getName();
+    private void handleArenaListClick(Player player, InventoryClickEvent event) {
+        ItemStack clicked = event.getCurrentItem();
+        if (clicked == null || clicked.getType() == Material.AIR) return;
+        
+        if (clicked.getType() == Material.LIME_WOOL) {
+            // Create new arena
+            player.closeInventory();
+            player.sendMessage("§aPlease type the name for the new arena in chat:");
+            // TODO: Implement chat input handler for arena creation
+        } else if (clicked.getType() == Material.GREEN_WOOL || clicked.getType() == Material.RED_WOOL) {
+            // Edit existing arena
+            ItemMeta meta = clicked.getItemMeta();
+            if (meta != null && meta.hasDisplayName()) {
+                String arenaName = meta.getDisplayName().substring(2); // Remove color code
+                Arena arena = plugin.getArenaManager().getArena(arenaName);
+                if (arena != null) {
+                    openArenaEditor(player, arena);
                 }
             }
         }
-        return null;
     }
     
-    private String extractArenaNameFromTitle(String title) {
-        String prefix = arenaEditorConfig.getString("title", "§6Arena Editor").split(" - ")[0];
-        if (title.startsWith(prefix + " - ")) {
-            return title.substring((prefix + " - ").length());
+    private void handleEditorClick(Player player, InventoryClickEvent event, String title) {
+        ItemStack clicked = event.getCurrentItem();
+        if (clicked == null || clicked.getType() == Material.AIR) return;
+        
+        // Extract arena name from title
+        String arenaName = title.replace("§6Arena Editor - ", "").replace("Arena Editor", "").trim();
+        if (arenaName.startsWith("§6")) {
+            arenaName = arenaName.substring(2);
         }
-        return null;
+        
+        Arena arena = plugin.getArenaManager().getArena(arenaName);
+        if (arena == null) return;
+        
+        handleEditorButtonClick(player, clicked, arena);
     }
     
-    private String identifyButton(int slot) {
-        ConfigurationSection buttons = arenaEditorConfig.getConfigurationSection("buttons");
-        if (buttons != null) {
-            for (String buttonKey : buttons.getKeys(false)) {
-                if (buttons.getConfigurationSection(buttonKey).getInt("slot") == slot) {
-                    return buttonKey;
+    private void handleEditorButtonClick(Player player, ItemStack clicked, Arena arena) {
+        Location playerLoc = player.getLocation();
+        
+        switch (clicked.getType()) {
+            case RED_BED:
+                arena.setSpawn1(playerLoc);
+                player.sendMessage("§aSpawn 1 set to your current location!");
+                break;
+                
+            case BLUE_BED:
+                arena.setSpawn2(playerLoc);
+                player.sendMessage("§aSpawn 2 set to your current location!");
+                break;
+                
+            case BEACON:
+                arena.setCenter(playerLoc);
+                player.sendMessage("§aCenter set to your current location!");
+                break;
+                
+            case STONE_BUTTON:
+                ItemMeta meta = clicked.getItemMeta();
+                if (meta != null && meta.hasDisplayName()) {
+                    if (meta.getDisplayName().contains("Min")) {
+                        arena.setMinCorner(playerLoc);
+                        player.sendMessage("§aMin corner set to your current location!");
+                    } else if (meta.getDisplayName().contains("Max")) {
+                        arena.setMaxCorner(playerLoc);
+                        player.sendMessage("§aMax corner set to your current location!");
+                    }
                 }
-            }
-        }
-        return null;
-    }
-    
-    private void handleEditorButtonClick(Player player, String arenaName, String buttonType) {
-        if ("generate_schematic".equals(buttonType)) {
-            Arena arena = plugin.getArenaManager().getArena(arenaName);
-            if (arena == null) {
-                player.sendMessage("§cArena not found!");
+                break;
+                
+            case CHEST:
+                player.closeInventory();
+                plugin.getAllowedKitsGui().openAllowedKitsGui(player, arena);
                 return;
-            }
-            
-            if (arena.getCorner1() == null || arena.getCorner2() == null) {
-                player.sendMessage("§cBoth corners must be set before generating schematic!");
+                
+            case EMERALD:
+                plugin.getArenaManager().saveArenas();
+                player.sendMessage("§aArena saved successfully!");
+                break;
+                
+            case REDSTONE:
+                plugin.getArenaManager().deleteArena(arena.getName());
+                player.sendMessage("§cArena deleted!");
+                player.closeInventory();
                 return;
-            }
-            
-            boolean success = plugin.getArenaManager().saveSchematic(arena);
-            if (success) {
-                player.sendMessage("§aSchematic generated successfully for arena: " + arenaName);
-            } else {
-                player.sendMessage("§cFailed to generate schematic for arena: " + arenaName);
-            }
-            player.closeInventory();
-        } else if ("allowed_kits".equals(buttonType)) {
-            // Open the allowed kits GUI
-            plugin.getAllowedKitsGui().openAllowedKitsGui(player, arenaName);
-        } else {
-            // Set up location setting
-            pendingLocationSets.put(player.getUniqueId(), buttonType);
-            pendingArenas.put(player.getUniqueId(), arenaName);
-            
-            player.closeInventory();
-            player.sendMessage("§aShift + Left Click to set " + buttonType + " for arena: " + arenaName);
+                
+            case ARROW:
+                openArenaList(player);
+                return;
         }
-    }
-    
-    @EventHandler
-    public void onPlayerInteract(PlayerInteractEvent event) {
-        Player player = event.getPlayer();
         
-        if (!pendingLocationSets.containsKey(player.getUniqueId())) return;
-        
-        if (event.getAction() == Action.LEFT_CLICK_AIR && player.isSneaking()) {
-            event.setCancelled(true);
-            
-            String buttonType = pendingLocationSets.remove(player.getUniqueId());
-            String arenaName = pendingArenas.remove(player.getUniqueId());
-            
-            Arena arena = plugin.getArenaManager().getArena(arenaName);
-            if (arena == null) {
-                player.sendMessage("§cArena not found!");
-                return;
-            }
-            
-            Location location = player.getLocation();
-            String coordsInfo = String.format("§7X: %.1f, Y: %.1f, Z: %.1f", location.getX(), location.getY(), location.getZ());
-            
-            switch (buttonType) {
-                case "spawn1":
-                    arena.setSpawn1(location);
-                    player.sendMessage("§aSpawn 1 set for arena: " + arenaName);
-                    player.sendMessage(coordsInfo);
-                    break;
-                case "spawn2":
-                    arena.setSpawn2(location);
-                    player.sendMessage("§aSpawn 2 set for arena: " + arenaName);
-                    player.sendMessage(coordsInfo);
-                    break;
-                case "center":
-                    arena.setCenter(location);
-                    player.sendMessage("§aCenter set for arena: " + arenaName);
-                    player.sendMessage(coordsInfo);
-                    break;
-                case "corner1":
-                    arena.setCorner1(location);
-                    player.sendMessage("§aCorner 1 set for arena: " + arenaName);
-                    player.sendMessage(coordsInfo);
-                    break;
-                case "corner2":
-                    arena.setCorner2(location);
-                    player.sendMessage("§aCorner 2 set for arena: " + arenaName);
-                    player.sendMessage(coordsInfo);
-                    break;
-            }
-            
-            plugin.getArenaManager().saveArena(arena);
-            
-            // Reopen the arena editor GUI
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                openArenaEditorGui(player, arenaName);
-            }, 1L);
-        }
+        // Refresh the GUI
+        openArenaEditor(player, arena);
     }
 }

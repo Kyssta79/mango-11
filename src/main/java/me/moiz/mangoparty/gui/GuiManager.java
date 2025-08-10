@@ -451,25 +451,47 @@ public class GuiManager implements Listener {
     }
 
     private void handleRegularKitSelection(Player player, String title, int slot) {
-        // Existing kit selection logic
+        // Debug logging
+        plugin.getLogger().info("Kit selection - Player: " + player.getName() + ", Title: " + title + ", Slot: " + slot);
+        
         String matchType = title.contains("Split") ? "split" : "ffa";
         YamlConfiguration config = "split".equalsIgnoreCase(matchType) ? splitConfig : ffaConfig;
         
+        plugin.getLogger().info("Match type: " + matchType);
+        
         ConfigurationSection kitsSection = config.getConfigurationSection("kits");
         if (kitsSection != null) {
+            plugin.getLogger().info("Found kits section with " + kitsSection.getKeys(false).size() + " kits");
+            
             for (String kitKey : kitsSection.getKeys(false)) {
                 ConfigurationSection kitSection = kitsSection.getConfigurationSection(kitKey);
-                if (kitSection != null && kitSection.getInt("slot") == slot) {
-                    String kitName = kitSection.getString("kit");
-                    Kit kit = plugin.getKitManager().getKit(kitName);
+                if (kitSection != null) {
+                    int kitSlot = kitSection.getInt("slot");
+                    plugin.getLogger().info("Checking kit " + kitKey + " at slot " + kitSlot + " vs clicked slot " + slot);
                     
-                    if (kit != null) {
-                        startMatchPreparation(player, kit, matchType);
-                        player.closeInventory();
-                        return;
+                    if (kitSlot == slot) {
+                        String kitName = kitSection.getString("kit");
+                        Kit kit = plugin.getKitManager().getKit(kitName);
+                        
+                        plugin.getLogger().info("Found matching kit: " + kitName + ", Kit object: " + (kit != null ? "found" : "null"));
+                        
+                        if (kit != null) {
+                            startMatchPreparation(player, kit, matchType);
+                            player.closeInventory();
+                            return;
+                        } else {
+                            player.sendMessage("§cKit '" + kitName + "' not found!");
+                            plugin.getLogger().warning("Kit '" + kitName + "' not found in KitManager!");
+                        }
                     }
                 }
             }
+            
+            plugin.getLogger().warning("No kit found for slot " + slot + " in " + matchType + " GUI");
+            player.sendMessage("§cNo kit configured for this slot!");
+        } else {
+            plugin.getLogger().warning("No kits section found in " + matchType + " config");
+            player.sendMessage("§cNo kits configured for this match type!");
         }
     }
 
@@ -481,22 +503,31 @@ public class GuiManager implements Listener {
     }
     
     private void startMatchPreparation(Player player, Kit kit, String matchType) {
+        plugin.getLogger().info("Starting match preparation for player: " + player.getName() + ", kit: " + kit.getName() + ", type: " + matchType);
+        
         // Get player's party
         Party party = plugin.getPartyManager().getParty(player);
         if (party == null || !party.isLeader(player.getUniqueId())) {
             player.sendMessage("§cYou must be a party leader to start matches!");
+            plugin.getLogger().info("Player is not party leader or not in party");
             return;
         }
+        
+        plugin.getLogger().info("Player is party leader of party with " + party.getSize() + " members");
         
         // Get an available arena
         Arena arena = plugin.getArenaManager().getAvailableArena();
         if (arena == null) {
             player.sendMessage("§cNo available arenas! All arenas are currently in use.");
+            plugin.getLogger().info("No available arenas found");
             return;
         }
+        
+        plugin.getLogger().info("Found available arena: " + arena.getName());
         
         // Start the match
         plugin.getMatchManager().startMatch(party, arena, kit, matchType);
         player.sendMessage("§aStarting " + matchType + " match with kit: " + kit.getDisplayName());
+        plugin.getLogger().info("Match started successfully");
     }
 }

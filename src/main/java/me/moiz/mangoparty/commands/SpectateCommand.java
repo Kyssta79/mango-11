@@ -24,17 +24,6 @@ public class SpectateCommand implements CommandExecutor {
         }
         
         Player player = (Player) sender;
-        Match match = plugin.getMatchManager().getPlayerMatch(player);
-        
-        if (match == null) {
-            player.sendMessage("§cYou are not in a match!");
-            return true;
-        }
-        
-        if (!match.isPlayerSpectator(player.getUniqueId())) {
-            player.sendMessage("§cYou must be spectating to use this command!");
-            return true;
-        }
         
         if (args.length == 0) {
             player.sendMessage("§cUsage: /spectate <player>");
@@ -47,22 +36,29 @@ public class SpectateCommand implements CommandExecutor {
             return true;
         }
         
+        // Check if target is in a match
         Match targetMatch = plugin.getMatchManager().getPlayerMatch(target);
-        if (targetMatch == null || !targetMatch.getId().equals(match.getId())) {
-            player.sendMessage("§cThat player is not in your match!");
+        if (targetMatch == null) {
+            player.sendMessage("§cThat player is not in a match!");
             return true;
         }
         
-        if (!match.isPlayerAlive(target.getUniqueId())) {
+        // Check if target is alive in the match
+        if (!targetMatch.isPlayerAlive(target.getUniqueId())) {
             player.sendMessage("§cThat player is not alive!");
             return true;
         }
         
-        // Teleport to target
+        // If spectator is already in a match, check if it's the same match
+        Match spectatorMatch = plugin.getMatchManager().getPlayerMatch(player);
+        if (spectatorMatch != null && !spectatorMatch.getId().equals(targetMatch.getId())) {
+            player.sendMessage("§cYou can only spectate players in your own match!");
+            return true;
+        }
+        
+        // Teleport to target and set spectator mode
         player.teleport(target.getLocation());
-        player.setGameMode(GameMode.SURVIVAL);
-        player.setAllowFlight(true);
-        player.setFlying(true);
+        player.setGameMode(GameMode.SPECTATOR);
         player.sendMessage("§aNow spectating " + target.getName());
         
         return true;

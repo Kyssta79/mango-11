@@ -4,6 +4,7 @@ import me.moiz.mangoparty.MangoParty;
 import me.moiz.mangoparty.models.Kit;
 import me.moiz.mangoparty.models.Party;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -14,8 +15,6 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.SkullMeta;
-import me.moiz.mangoparty.models.Arena;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -27,62 +26,257 @@ import java.io.IOException;
 
 public class GuiManager implements Listener {
     private MangoParty plugin;
-    private YamlConfiguration splitConfig;
-    private YamlConfiguration ffaConfig;
+    private KitEditorGui kitEditorGui;
+    private AllowedKitsGui allowedKitsGui;
     
     // Add this field at the top of the class
     private Map<UUID, UUID> challengerTargets = new HashMap<>();
     
     public GuiManager(MangoParty plugin) {
         this.plugin = plugin;
-        loadGuiConfigs();
-        Bukkit.getPluginManager().registerEvents(this, plugin);
+        this.kitEditorGui = new KitEditorGui(plugin);
+        this.allowedKitsGui = new AllowedKitsGui(plugin);
     }
     
-    private void loadGuiConfigs() {
-        File guiDir = new File(plugin.getDataFolder(), "gui");
-        if (!guiDir.exists()) {
-            guiDir.mkdirs();
-        }
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player)) return;
         
-        File splitFile = new File(guiDir, "split.yml");
-        File ffaFile = new File(guiDir, "ffa.yml");
+        Player player = (Player) event.getWhoClicked();
+        String title = event.getView().getTitle();
         
-        if (!splitFile.exists()) {
-            plugin.saveResource("gui/split.yml", false);
-        }
-        if (!ffaFile.exists()) {
-            plugin.saveResource("gui/ffa.yml", false);
-        }
+        // Debug logging
+        plugin.getLogger().info("Inventory click - Player: " + player.getName() + ", Title: " + title + ", Slot: " + event.getSlot());
         
-        splitConfig = YamlConfiguration.loadConfiguration(splitFile);
-        ffaConfig = YamlConfiguration.loadConfiguration(ffaFile);
+        // Handle different GUI types
+        if (title.equals("§6Select Match Type")) {
+            event.setCancelled(true);
+            handleMatchTypeSelection(player, event.getSlot());
+        } else if (isKitSelectionGui(title)) {
+            event.setCancelled(true);
+            handleRegularKitSelection(player, event.getSlot(), title);
+        } else if (title.contains("Kit Selection")) {
+            event.setCancelled(true);
+            handleQueueKitSelection(player, event.getSlot(), title);
+        } else if (title.equals("§6Kit Editor")) {
+            kitEditorGui.handleClick(event);
+        } else if (title.equals("§6Arena Editor")) {
+            // Let ArenaEditorGui handle this
+            return;
+        } else if (title.equals("§6Allowed Kits")) {
+            allowedKitsGui.handleClick(event);
+        }
     }
-
-    // Make this method public so ConfigManager can trigger a reload
-    public void reloadGuiConfigs() {
-        loadGuiConfigs();
-        plugin.getLogger().info("GUI configs reloaded.");
+    
+    private boolean isKitSelectionGui(String title) {
+        String lowerTitle = title.toLowerCase();
+        return lowerTitle.contains("split") || lowerTitle.contains("ffa") || lowerTitle.contains("duels");
+    }
+    
+    private void handleMatchTypeSelection(Player player, int slot) {
+        Party party = plugin.getPartyManager().getParty(player);
+        if (party == null || !party.isLeader(player)) {
+            player.sendMessage("§cYou must be a party leader to start matches!");
+            return;
+        }
+        
+        switch (slot) {
+            case 10: // Split
+                openKitSelectionGui(player, "split");
+                break;
+            case 12: // FFA
+                openKitSelectionGui(player, "ffa");
+                break;
+            case 14: // Party Duel
+                plugin.getPartyDuelManager().openDuelGui(player);
+                break;
+        }
+    }
+    
+    private void handleRegularKitSelection(Player player, int slot, String title) {
+        plugin.getLogger().info("DEBUG: Handling kit selection - Player: " + player.getName() + ", Slot: " + slot + ", Title: " + title);
+        
+        Party party = plugin.getPartyManager().getParty(player);
+        if (party == null || !party.isLeader(player)) {
+            plugin.getLogger().info("DEBUG: Player is not party leader");
+            player.sendMessage("§cYou must be a party leader to start matches!");
+            return;
+        }
+        
+        // Determine match type from title
+        String matchType;
+        String lowerTitle = title.toLowerCase();
+        if (lowerTitle.contains("split")) {
+            matchType = "split";
+        } else if (lowerTitle.contains("ffa")) {
+            matchType = "ffa";
+        } else {
+            plugin.getLogger().info("DEBUG: Could not determine match type from title: " + title);
+            return;
+        }
+        
+        plugin.getLogger().info("DEBUG: Match type determined: " + matchType);
+        
+        // Load GUI configuration
+        File guiFile = new File(plugin.getDataFolder(), "gui/" + matchType + ".yml");
+        if (!guiFile.exists()) {
+            plugin.getLogger().info("DEBUG: GUI file not found: " + guiFile.getPath());
+            player.sendMessage("§cGUI configuration not found!");
+            return;
+        }
+        
+        YamlConfiguration config = YamlConfiguration.loadConfiguration(guiFile);
+        ConfigurationSection kitsSection = config.getConfigurationSection("kits");
+        
+        if (kitsSection == null) {
+            plugin.getLogger().info("DEBUG: No kits section found in config");
+            player.sendMessage("§cNo kits configured for this match type!");
+            return;
+        }
+        
+        // Find kit by slot
+        String kitName = null;
+        for (String key : kitsSection.getKeys(false)) {
+            if (kitsSection.getInt(key + ".slot") == slot) {
+                kitName = kitsSection.getString(key + ".kit");
+                break;
+            }
+        }
+        
+        plugin.getLogger().info("DEBUG: Kit name found for slot " + slot + ": " + kitName);
+        
+        if (kitName == null) {
+            plugin.getLogger().info("DEBUG: No kit found for slot " + slot);
+            player.sendMessage("§cNo kit configured for this slot!");
+            return;
+        }
+        
+        // Get kit from manager
+        Kit kit = plugin.getKitManager().getKit(kitName);
+        if (kit == null) {
+            plugin.getLogger().info("DEBUG: Kit not found in KitManager: " + kitName);
+            player.sendMessage("§cKit not found: " + kitName);
+            return;
+        }
+        
+        plugin.getLogger().info("DEBUG: Kit found: " + kit.getName());
+        
+        // Start match preparation
+        startMatchPreparation(player, party, kit, matchType);
+    }
+    
+    private void startMatchPreparation(Player player, Party party, Kit kit, String matchType) {
+        plugin.getLogger().info("DEBUG: Starting match preparation - Kit: " + kit.getName() + ", Type: " + matchType);
+        
+        // Find available arena or create instance
+        Arena arena = findOrCreateArenaForKit(kit);
+        
+        if (arena == null) {
+            plugin.getLogger().info("DEBUG: No arena available for kit: " + kit.getName());
+            player.sendMessage("§cNo arena available for this kit!");
+            return;
+        }
+        
+        plugin.getLogger().info("DEBUG: Using arena: " + arena.getName());
+        
+        player.closeInventory();
+        player.sendMessage("§aStarting " + matchType + " match with kit: " + kit.getDisplayName());
+        
+        // Start the match
+        plugin.getMatchManager().startMatch(party, arena, kit, matchType);
+    }
+    
+    private Arena findOrCreateArenaForKit(Kit kit) {
+        // First, try to find an available arena that allows this kit
+        Arena availableArena = plugin.getArenaManager().getAvailableArenaForKit(kit.getName());
+        if (availableArena != null) {
+            plugin.getLogger().info("DEBUG: Found available arena: " + availableArena.getName());
+            return availableArena;
+        }
+        
+        // If no available arena, find a base arena that allows this kit and create an instance
+        Arena baseArena = null;
+        for (Arena arena : plugin.getArenaManager().getArenas().values()) {
+            if (arena.isComplete() && arena.isKitAllowed(kit.getName()) && !arena.isInstance()) {
+                baseArena = arena;
+                break;
+            }
+        }
+        
+        if (baseArena != null) {
+            plugin.getLogger().info("DEBUG: Creating instance of arena: " + baseArena.getName());
+            Arena instance = plugin.getArenaManager().createArenaInstance(baseArena, kit.getName());
+            if (instance != null) {
+                plugin.getLogger().info("DEBUG: Created arena instance: " + instance.getName());
+                return instance;
+            }
+        }
+        
+        plugin.getLogger().info("DEBUG: No suitable arena found for kit: " + kit.getName());
+        return null;
+    }
+    
+    private void handleQueueKitSelection(Player player, int slot, String title) {
+        // Extract mode from title (1v1, 2v2, 3v3)
+        String mode = null;
+        if (title.contains("1V1")) mode = "1v1";
+        else if (title.contains("2V2")) mode = "2v2";
+        else if (title.contains("3V3")) mode = "3v3";
+        
+        if (mode == null) return;
+        
+        // Load queue GUI configuration
+        File guiFile = new File(plugin.getDataFolder(), "gui/" + mode + "kits.yml");
+        if (!guiFile.exists()) return;
+        
+        YamlConfiguration config = YamlConfiguration.loadConfiguration(guiFile);
+        ConfigurationSection kitsSection = config.getConfigurationSection("kits");
+        
+        if (kitsSection == null) return;
+        
+        // Find kit by slot
+        String kitName = null;
+        for (String key : kitsSection.getKeys(false)) {
+            if (kitsSection.getInt(key + ".slot") == slot) {
+                kitName = key;
+                break;
+            }
+        }
+        
+        if (kitName == null) return;
+        
+        Kit kit = plugin.getKitManager().getKit(kitName);
+        if (kit == null) {
+            player.sendMessage("§cKit not found: " + kitName);
+            return;
+        }
+        
+        // Add to queue
+        QueueEntry entry = new QueueEntry(player, kit, mode);
+        plugin.getQueueManager().addToQueue(entry);
+        
+        player.closeInventory();
+        player.sendMessage("§aAdded to " + mode.toUpperCase() + " queue with kit: " + kit.getDisplayName());
     }
     
     public void openMatchTypeGui(Player player) {
         Inventory gui = Bukkit.createInventory(null, 27, "§6Select Match Type");
         
-        // Party Split item
+        // Split item
         ItemStack splitItem = new ItemStack(Material.IRON_SWORD);
         ItemMeta splitMeta = splitItem.getItemMeta();
-        splitMeta.setDisplayName("§aParty Split");
+        splitMeta.setDisplayName("§cParty Split");
         List<String> splitLore = new ArrayList<>();
-        splitLore.add("§7Divide party into teams");
-        splitLore.add("§7and fight each other");
+        splitLore.add("§7Split your party into teams");
+        splitLore.add("§7and fight against each other");
         splitMeta.setLore(splitLore);
         splitItem.setItemMeta(splitMeta);
         gui.setItem(10, splitItem);
         
-        // Party FFA item
+        // FFA item
         ItemStack ffaItem = new ItemStack(Material.DIAMOND_SWORD);
         ItemMeta ffaMeta = ffaItem.getItemMeta();
-        ffaMeta.setDisplayName("§cParty FFA");
+        ffaMeta.setDisplayName("§6Party FFA");
         List<String> ffaLore = new ArrayList<>();
         ffaLore.add("§7Free for all battle");
         ffaLore.add("§7Last player standing wins");
@@ -90,47 +284,123 @@ public class GuiManager implements Listener {
         ffaItem.setItemMeta(ffaMeta);
         gui.setItem(12, ffaItem);
         
-        // Party vs Party item
-        ItemStack pvpItem = new ItemStack(Material.PLAYER_HEAD);
-        ItemMeta pvpMeta = pvpItem.getItemMeta();
-        pvpMeta.setDisplayName("§eParty vs Party");
-        List<String> pvpLore = new ArrayList<>();
-        pvpLore.add("§7Challenge another party");
-        pvpLore.add("§7to an epic team battle");
-        pvpMeta.setLore(pvpLore);
-        pvpItem.setItemMeta(pvpMeta);
-        gui.setItem(14, pvpItem);
+        // Party Duel item
+        ItemStack duelItem = new ItemStack(Material.GOLDEN_SWORD);
+        ItemMeta duelMeta = duelItem.getItemMeta();
+        duelMeta.setDisplayName("§eParty Duel");
+        List<String> duelLore = new ArrayList<>();
+        duelLore.add("§7Challenge another party");
+        duelLore.add("§7to a team vs team battle");
+        duelMeta.setLore(duelLore);
+        duelItem.setItemMeta(duelMeta);
+        gui.setItem(14, duelItem);
         
-        // Queue modes
-        ItemStack queue1v1 = new ItemStack(Material.GOLDEN_SWORD);
-        ItemMeta queue1v1Meta = queue1v1.getItemMeta();
-        queue1v1Meta.setDisplayName("§61v1 Queue");
-        List<String> queue1v1Lore = new ArrayList<>();
-        queue1v1Lore.add("§7Join 1v1 ranked queue");
-        queue1v1Lore.add("§7Fight solo opponents");
-        queue1v1Meta.setLore(queue1v1Lore);
-        queue1v1.setItemMeta(queue1v1Meta);
-        gui.setItem(19, queue1v1);
+        player.openInventory(gui);
+    }
+    
+    public void openKitSelectionGui(Player player, String matchType) {
+        File guiFile = new File(plugin.getDataFolder(), "gui/" + matchType + ".yml");
+        if (!guiFile.exists()) {
+            player.sendMessage("§cGUI configuration not found!");
+            return;
+        }
         
-        ItemStack queue2v2 = new ItemStack(Material.GOLDEN_AXE);
-        ItemMeta queue2v2Meta = queue2v2.getItemMeta();
-        queue2v2Meta.setDisplayName("§62v2 Queue");
-        List<String> queue2v2Lore = new ArrayList<>();
-        queue2v2Lore.add("§7Join 2v2 team queue");
-        queue2v2Lore.add("§7Fight with a teammate");
-        queue2v2Meta.setLore(queue2v2Lore);
-        queue2v2.setItemMeta(queue2v2Meta);
-        gui.setItem(21, queue2v2);
+        YamlConfiguration config = YamlConfiguration.loadConfiguration(guiFile);
+        String title = ChatColor.translateAlternateColorCodes('&', config.getString("title", "§6Kit Selection"));
+        int size = config.getInt("size", 27);
         
-        ItemStack queue3v3 = new ItemStack(Material.NETHERITE_SWORD);
-        ItemMeta queue3v3Meta = queue3v3.getItemMeta();
-        queue3v3Meta.setDisplayName("§63v3 Queue");
-        List<String> queue3v3Lore = new ArrayList<>();
-        queue3v3Lore.add("§7Join 3v3 team queue");
-        queue3v3Lore.add("§7Epic team battles");
-        queue3v3Meta.setLore(queue3v3Lore);
-        queue3v3.setItemMeta(queue3v3Meta);
-        gui.setItem(23, queue3v3);
+        Inventory gui = Bukkit.createInventory(null, size, title);
+        
+        ConfigurationSection kitsSection = config.getConfigurationSection("kits");
+        if (kitsSection != null) {
+            for (String key : kitsSection.getKeys(false)) {
+                int slot = kitsSection.getInt(key + ".slot");
+                String kitName = kitsSection.getString(key + ".kit");
+                String displayName = ChatColor.translateAlternateColorCodes('&', kitsSection.getString(key + ".name", kitName));
+                List<String> lore = kitsSection.getStringList(key + ".lore");
+                
+                // Get kit from manager to use its icon
+                Kit kit = plugin.getKitManager().getKit(kitName);
+                ItemStack item;
+                if (kit != null && kit.getIcon() != null) {
+                    item = kit.getIcon().clone();
+                } else {
+                    item = new ItemStack(Material.IRON_SWORD);
+                }
+                
+                ItemMeta meta = item.getItemMeta();
+                meta.setDisplayName(displayName);
+                
+                List<String> coloredLore = new ArrayList<>();
+                for (String line : lore) {
+                    coloredLore.add(ChatColor.translateAlternateColorCodes('&', line));
+                }
+                meta.setLore(coloredLore);
+                
+                // Set custom model data if specified
+                if (kitsSection.contains(key + ".customModelData")) {
+                    meta.setCustomModelData(kitsSection.getInt(key + ".customModelData"));
+                }
+                
+                item.setItemMeta(meta);
+                gui.setItem(slot, item);
+            }
+        }
+        
+        player.openInventory(gui);
+    }
+    
+    public void openQueueKitSelectionGui(Player player, String mode) {
+        File guiFile = new File(plugin.getDataFolder(), "gui/" + mode + "kits.yml");
+        if (!guiFile.exists()) {
+            player.sendMessage("§cQueue GUI configuration not found!");
+            return;
+        }
+        
+        YamlConfiguration config = YamlConfiguration.loadConfiguration(guiFile);
+        String title = ChatColor.translateAlternateColorCodes('&', config.getString("title", "§6" + mode.toUpperCase() + " Kit Selection"));
+        int size = config.getInt("size", 27);
+        
+        Inventory gui = Bukkit.createInventory(null, size, title);
+        
+        ConfigurationSection kitsSection = config.getConfigurationSection("kits");
+        if (kitsSection != null) {
+            for (String kitName : kitsSection.getKeys(false)) {
+                int slot = kitsSection.getInt(kitName + ".slot");
+                String displayName = ChatColor.translateAlternateColorCodes('&', kitsSection.getString(kitName + ".name", kitName));
+                List<String> lore = kitsSection.getStringList(kitName + ".lore");
+                String materialName = kitsSection.getString(kitName + ".material", "IRON_SWORD");
+                
+                Material material;
+                try {
+                    material = Material.valueOf(materialName);
+                } catch (IllegalArgumentException e) {
+                    material = Material.IRON_SWORD;
+                }
+                
+                ItemStack item = new ItemStack(material);
+                ItemMeta meta = item.getItemMeta();
+                meta.setDisplayName(displayName);
+                
+                List<String> coloredLore = new ArrayList<>();
+                for (String line : lore) {
+                    String processedLine = ChatColor.translateAlternateColorCodes('&', line);
+                    // Replace queue placeholder
+                    int queueCount = plugin.getQueueManager().getQueueCount(mode, kitName);
+                    processedLine = processedLine.replace("{queued}", String.valueOf(queueCount));
+                    coloredLore.add(processedLine);
+                }
+                meta.setLore(coloredLore);
+                
+                // Set custom model data if specified
+                if (kitsSection.contains(kitName + ".customModelData")) {
+                    meta.setCustomModelData(kitsSection.getInt(kitName + ".customModelData"));
+                }
+                
+                item.setItemMeta(meta);
+                gui.setItem(slot, item);
+            }
+        }
         
         player.openInventory(gui);
     }
@@ -155,8 +425,7 @@ public class GuiManager implements Listener {
                 !otherParty.isInMatch()) {
                 
                 ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-                SkullMeta meta = (SkullMeta) head.getItemMeta();
-                meta.setOwningPlayer(online);
+                ItemMeta meta = head.getItemMeta();
                 meta.setDisplayName("§e" + online.getName() + "'s Party");
                 
                 List<String> lore = new ArrayList<>();
@@ -176,386 +445,5 @@ public class GuiManager implements Listener {
         }
         
         player.openInventory(gui);
-    }
-    
-    public void openKitGui(Player player, String matchType) {
-        YamlConfiguration config = "split".equalsIgnoreCase(matchType) ? splitConfig : ffaConfig;
-        String title = config.getString("title", "§6Select Kit");
-        int size = config.getInt("size", 27);
-        
-        Inventory gui = Bukkit.createInventory(null, size, title);
-        
-        ConfigurationSection kitsSection = config.getConfigurationSection("kits");
-        if (kitsSection != null) {
-            Map<String, Kit> availableKits = plugin.getKitManager().getKits();
-            
-            for (String kitKey : kitsSection.getKeys(false)) {
-                ConfigurationSection kitSection = kitsSection.getConfigurationSection(kitKey);
-                if (kitSection != null) {
-                    String kitName = kitSection.getString("kit");
-                    Kit kit = availableKits.get(kitName);
-                    
-                    if (kit != null) {
-                        int slot = kitSection.getInt("slot");
-                        String displayName = kitSection.getString("name", kit.getDisplayName());
-                        List<String> lore = kitSection.getStringList("lore");
-                        
-                        ItemStack item = kit.getIcon() != null ? kit.getIcon().clone() : new ItemStack(Material.IRON_SWORD);
-                        ItemMeta meta = item.getItemMeta();
-                        meta.setDisplayName(displayName);
-                        meta.setLore(lore);
-                        
-                        if (kitSection.contains("customModelData")) {
-                            meta.setCustomModelData(kitSection.getInt("customModelData"));
-                        }
-                        
-                        item.setItemMeta(meta);
-                        gui.setItem(slot, item);
-                    } else {
-                        plugin.getLogger().warning("Kit '" + kitName + "' defined in " + matchType + ".yml but not found in KitManager.");
-                    }
-                }
-            }
-        }
-        
-        player.openInventory(gui);
-    }
-    
-    public void openQueueKitGui(Player player, String mode) {
-        YamlConfiguration config = loadQueueConfig(mode);
-        String title = "§6" + mode.toUpperCase() + " Kit Selection";
-        int size = 27; // Default size
-        
-        Inventory gui = Bukkit.createInventory(null, size, title);
-        
-        ConfigurationSection kitsSection = config.getConfigurationSection("kits");
-        if (kitsSection != null) {
-            Map<String, Kit> availableKits = plugin.getKitManager().getKits();
-            
-            for (String kitKey : kitsSection.getKeys(false)) {
-                ConfigurationSection kitSection = kitsSection.getConfigurationSection(kitKey);
-                if (kitSection != null) {
-                    String kitName = kitKey; // Use the key as kit name
-                    Kit kit = availableKits.get(kitName);
-                    
-                    if (kit != null) {
-                        int slot = kitSection.getInt("slot");
-                        String materialName = kitSection.getString("material", "IRON_SWORD");
-                        String displayName = kitSection.getString("name", kit.getDisplayName());
-                        List<String> lore = new ArrayList<>(kitSection.getStringList("lore"));
-                        
-                        // Replace {queued} placeholder
-                        int queueCount = plugin.getQueueManager().getQueueCount(mode, kitName);
-                        for (int i = 0; i < lore.size(); i++) {
-                            lore.set(i, lore.get(i).replace("{queued}", String.valueOf(queueCount)));
-                        }
-                        
-                        Material material = Material.valueOf(materialName);
-                        ItemStack item = new ItemStack(material);
-                        ItemMeta meta = item.getItemMeta();
-                        meta.setDisplayName(displayName);
-                        meta.setLore(lore);
-                        
-                        if (kitSection.contains("customModelData")) {
-                            meta.setCustomModelData(kitSection.getInt("customModelData"));
-                        }
-                        
-                        item.setItemMeta(meta);
-                        gui.setItem(slot, item);
-                    }
-                }
-            }
-        }
-        
-        player.openInventory(gui);
-    }
-
-    public void openPartyVsPartyKitGui(Player challenger, Player challengedLeader) {
-        // Use split config for party vs party
-        String title = "§6Select Kit for Party Duel";
-        int size = splitConfig.getInt("size", 27);
-        
-        Inventory gui = Bukkit.createInventory(null, size, title);
-        
-        ConfigurationSection kitsSection = splitConfig.getConfigurationSection("kits");
-        if (kitsSection != null) {
-            Map<String, Kit> availableKits = plugin.getKitManager().getKits();
-            
-            for (String kitKey : kitsSection.getKeys(false)) {
-                ConfigurationSection kitSection = kitsSection.getConfigurationSection(kitKey);
-                if (kitSection != null) {
-                    String kitName = kitSection.getString("kit");
-                    Kit kit = availableKits.get(kitName);
-                    
-                    if (kit != null) {
-                        int slot = kitSection.getInt("slot");
-                        String displayName = kitSection.getString("name", kit.getDisplayName());
-                        List<String> lore = new ArrayList<>(kitSection.getStringList("lore"));
-                        lore.add("§7");
-                        lore.add("§eClick to challenge with this kit!");
-                        
-                        ItemStack item = kit.getIcon() != null ? kit.getIcon().clone() : new ItemStack(Material.IRON_SWORD);
-                        ItemMeta meta = item.getItemMeta();
-                        meta.setDisplayName(displayName);
-                        meta.setLore(lore);
-                        
-                        if (kitSection.contains("customModelData")) {
-                            meta.setCustomModelData(kitSection.getInt("customModelData"));
-                        }
-                        
-                        item.setItemMeta(meta);
-                        gui.setItem(slot, item);
-                    }
-                }
-            }
-        }
-        
-        // Store the challenged leader for later use
-        challengerTargets.put(challenger.getUniqueId(), challengedLeader.getUniqueId());
-        
-        challenger.openInventory(gui);
-    }
-
-    private YamlConfiguration loadQueueConfig(String mode) {
-        File guiDir = new File(plugin.getDataFolder(), "gui");
-        File configFile = new File(guiDir, mode + "kits.yml");
-        
-        if (!configFile.exists()) {
-            createDefaultQueueConfig(configFile, mode);
-        }
-        
-        return YamlConfiguration.loadConfiguration(configFile);
-    }
-
-    private void createDefaultQueueConfig(File configFile, String mode) {
-        YamlConfiguration config = new YamlConfiguration();
-        
-        config.set("title", "§6" + mode.toUpperCase() + " Kit Selection");
-        config.set("size", 27);
-        
-        // Add some default kit slots (empty, to be populated by admin)
-        config.set("kits", "");
-        
-        try {
-            config.save(configFile);
-        } catch (IOException e) {
-            plugin.getLogger().severe("Failed to create " + configFile.getName() + ": " + e.getMessage());
-        }
-    }
-    
-    @EventHandler
-    public void onInventoryClick(InventoryClickEvent event) {
-        if (!(event.getWhoClicked() instanceof Player)) return;
-        
-        Player player = (Player) event.getWhoClicked();
-        String title = event.getView().getTitle();
-        
-        // Debug logging
-        plugin.getLogger().info("Inventory click - Player: " + player.getName() + ", Title: " + title + ", Slot: " + event.getSlot());
-        
-        if (title.equals("§6Select Match Type")) {
-            event.setCancelled(true);
-            
-            ItemStack clicked = event.getCurrentItem();
-            if (clicked == null || clicked.getType() == Material.AIR) return;
-            
-            if (clicked.getType() == Material.IRON_SWORD) {
-                // Party Split selected
-                openKitGui(player, "split");
-            } else if (clicked.getType() == Material.DIAMOND_SWORD) {
-                // Party FFA selected
-                openKitGui(player, "ffa");
-            } else if (clicked.getType() == Material.PLAYER_HEAD) {
-                // Party vs Party selected
-                openPartyDuelGui(player);
-            } else if (clicked.getType() == Material.GOLDEN_SWORD) {
-                // 1v1 Queue selected
-                openQueueKitGui(player, "1v1");
-            } else if (clicked.getType() == Material.GOLDEN_AXE) {
-                // 2v2 Queue selected
-                openQueueKitGui(player, "2v2");
-            } else if (clicked.getType() == Material.NETHERITE_SWORD) {
-                // 3v3 Queue selected
-                openQueueKitGui(player, "3v3");
-            }
-        } else if (title.equals("§6Challenge Party")) {
-            event.setCancelled(true);
-            
-            ItemStack clicked = event.getCurrentItem();
-            if (clicked == null || clicked.getType() != Material.PLAYER_HEAD) return;
-            
-            SkullMeta meta = (SkullMeta) clicked.getItemMeta();
-            if (meta.getOwningPlayer() != null) {
-                Player targetLeader = meta.getOwningPlayer().getPlayer();
-                if (targetLeader != null && targetLeader.isOnline()) {
-                    openPartyVsPartyKitGui(player, targetLeader);
-                }
-            }
-        } else if (isKitSelectionGui(title)) {
-            event.setCancelled(true);
-            
-            ItemStack clicked = event.getCurrentItem();
-            if (clicked == null || clicked.getType() == Material.AIR) return;
-            
-            plugin.getLogger().info("Kit GUI click detected - Title: " + title);
-            
-            // Handle different types of kit selection
-            if (title.contains("1V1") || title.contains("2V2") || title.contains("3V3")) {
-                handleQueueKitSelection(player, title, event.getSlot());
-            } else if (title.contains("Party Duel")) {
-                handlePartyDuelKitSelection(player, event.getSlot());
-            } else {
-                // This handles split, ffa, and any other kit selection GUIs
-                plugin.getLogger().info("Handling regular kit selection");
-                handleRegularKitSelection(player, title, event.getSlot());
-            }
-        }
-    }
-    
-    private boolean isKitSelectionGui(String title) {
-        // Check for various kit selection GUI patterns
-        return title.contains("Kit Selection") || 
-               title.contains("Select Kit") || 
-               title.contains("Split") || 
-               title.contains("FFA") || 
-               title.contains("Duels") ||
-               title.contains("Party Duel") ||
-               title.contains("1V1") || 
-               title.contains("2V2") || 
-               title.contains("3V3");
-    }
-    
-    private void handleQueueKitSelection(Player player, String title, int slot) {
-        String mode = extractModeFromTitle(title);
-        if (mode == null) return;
-        
-        YamlConfiguration config = loadQueueConfig(mode);
-        ConfigurationSection kitsSection = config.getConfigurationSection("kits");
-        
-        if (kitsSection != null) {
-            for (String kitKey : kitsSection.getKeys(false)) {
-                ConfigurationSection kitSection = kitsSection.getConfigurationSection(kitKey);
-                if (kitSection != null && kitSection.getInt("slot") == slot) {
-                    String kitName = kitKey;
-                    plugin.getQueueManager().joinQueue(player, mode, kitName);
-                    player.closeInventory();
-                    return;
-                }
-            }
-        }
-    }
-
-    private void handlePartyDuelKitSelection(Player player, int slot) {
-        UUID targetId = challengerTargets.remove(player.getUniqueId());
-        if (targetId == null) return;
-        
-        Player target = Bukkit.getPlayer(targetId);
-        if (target == null || !target.isOnline()) {
-            player.sendMessage("§cTarget player is no longer online!");
-            player.closeInventory();
-            return;
-        }
-        
-        ConfigurationSection kitsSection = splitConfig.getConfigurationSection("kits");
-        if (kitsSection != null) {
-            for (String kitKey : kitsSection.getKeys(false)) {
-                ConfigurationSection kitSection = kitsSection.getConfigurationSection(kitKey);
-                if (kitSection != null && kitSection.getInt("slot") == slot) {
-                    String kitName = kitSection.getString("kit");
-                    plugin.getPartyDuelManager().challengeParty(player, target, kitName);
-                    player.closeInventory();
-                    return;
-                }
-            }
-        }
-    }
-
-    private void handleRegularKitSelection(Player player, String title, int slot) {
-        plugin.getLogger().info("Kit selection - Player: " + player.getName() + ", Title: " + title + ", Slot: " + slot);
-        
-        // Determine match type based on title
-        String matchType = "split"; // default
-        YamlConfiguration config = splitConfig; // default
-        
-        if (title.toLowerCase().contains("ffa")) {
-            matchType = "ffa";
-            config = ffaConfig;
-        } else if (title.toLowerCase().contains("split") || title.toLowerCase().contains("duels")) {
-            matchType = "split";
-            config = splitConfig;
-        }
-        
-        plugin.getLogger().info("Match type: " + matchType);
-        
-        ConfigurationSection kitsSection = config.getConfigurationSection("kits");
-        if (kitsSection != null) {
-            plugin.getLogger().info("Found kits section with " + kitsSection.getKeys(false).size() + " kits");
-            
-            for (String kitKey : kitsSection.getKeys(false)) {
-                ConfigurationSection kitSection = kitsSection.getConfigurationSection(kitKey);
-                if (kitSection != null) {
-                    int kitSlot = kitSection.getInt("slot");
-                    plugin.getLogger().info("Checking kit " + kitKey + " at slot " + kitSlot + " vs clicked slot " + slot);
-                    
-                    if (kitSlot == slot) {
-                        String kitName = kitSection.getString("kit");
-                        Kit kit = plugin.getKitManager().getKit(kitName);
-                        
-                        plugin.getLogger().info("Found matching kit: " + kitName + ", Kit object: " + (kit != null ? "found" : "null"));
-                        
-                        if (kit != null) {
-                            startMatchPreparation(player, kit, matchType);
-                            player.closeInventory();
-                            return;
-                        } else {
-                            player.sendMessage("§cKit '" + kitName + "' not found!");
-                            plugin.getLogger().warning("Kit '" + kitName + "' not found in KitManager!");
-                        }
-                    }
-                }
-            }
-            
-            plugin.getLogger().warning("No kit found for slot " + slot + " in " + matchType + " GUI");
-            player.sendMessage("§cNo kit configured for this slot!");
-        } else {
-            plugin.getLogger().warning("No kits section found in " + matchType + " config");
-            player.sendMessage("§cNo kits configured for this match type!");
-        }
-    }
-
-    private String extractModeFromTitle(String title) {
-        if (title.contains("1V1")) return "1v1";
-        if (title.contains("2V2")) return "2v2";
-        if (title.contains("3V3")) return "3v3";
-        return null;
-    }
-    
-    private void startMatchPreparation(Player player, Kit kit, String matchType) {
-        plugin.getLogger().info("Starting match preparation for player: " + player.getName() + ", kit: " + kit.getName() + ", type: " + matchType);
-        
-        // Get player's party
-        Party party = plugin.getPartyManager().getParty(player);
-        if (party == null || !party.isLeader(player.getUniqueId())) {
-            player.sendMessage("§cYou must be a party leader to start matches!");
-            plugin.getLogger().info("Player is not party leader or not in party");
-            return;
-        }
-        
-        plugin.getLogger().info("Player is party leader of party with " + party.getSize() + " members");
-        
-        // Get an available arena
-        Arena arena = plugin.getArenaManager().getAvailableArena();
-        if (arena == null) {
-            player.sendMessage("§cNo available arenas! All arenas are currently in use.");
-            plugin.getLogger().info("No available arenas found");
-            return;
-        }
-        
-        plugin.getLogger().info("Found available arena: " + arena.getName());
-        
-        // Start the match
-        plugin.getMatchManager().startMatch(party, arena, kit, matchType);
-        player.sendMessage("§aStarting " + matchType + " match with kit: " + kit.getDisplayName());
-        plugin.getLogger().info("Match started successfully");
     }
 }

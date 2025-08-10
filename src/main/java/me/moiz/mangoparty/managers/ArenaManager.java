@@ -175,6 +175,7 @@ public class ArenaManager {
     
     public Arena createArenaInstance(Arena originalArena, String kitName) {
         if (originalArena == null || !originalArena.isComplete()) {
+            plugin.getLogger().warning("Cannot create instance - original arena is null or incomplete");
             return null;
         }
         
@@ -258,12 +259,18 @@ public class ArenaManager {
         // Copy allowed kits
         instance.setAllowedKits(new ArrayList<>(originalArena.getAllowedKits()));
         
-        // Save the instance
+        // Save the instance to config and memory
         arenas.put(instanceName, instance);
         saveArena(instance);
         
+        plugin.getLogger().info("Created arena instance: " + instanceName + " from " + originalArena.getName());
+        
         // Paste the schematic at the new location
-        pasteSchematicForInstance(originalArena, instance);
+        if (pasteSchematicForInstance(originalArena, instance)) {
+            plugin.getLogger().info("Successfully pasted schematic for instance: " + instanceName);
+        } else {
+            plugin.getLogger().warning("Failed to paste schematic for instance: " + instanceName);
+        }
         
         return instance;
     }
@@ -320,10 +327,15 @@ public class ArenaManager {
     
     public void reserveArena(String arenaName) {
         reservedArenas.add(arenaName);
+        plugin.getLogger().info("Reserved arena: " + arenaName);
     }
     
     public void releaseArena(String arenaName) {
         reservedArenas.remove(arenaName);
+        plugin.getLogger().info("Released arena: " + arenaName);
+        
+        // If this is an instance arena and it's no longer needed, we could optionally clean it up
+        // For now, we'll keep instances for future use
     }
     
     public boolean isArenaReserved(String arenaName) {
@@ -370,6 +382,16 @@ public class ArenaManager {
     }
 
     public void deleteArena(String name) {
+        Arena arena = arenas.get(name);
+        if (arena != null && arena.isInstance()) {
+            // If deleting an instance, also delete its schematic if it exists
+            File schematicsDir = new File(plugin.getDataFolder(), "schematics");
+            File schematicFile = new File(schematicsDir, name + ".schem");
+            if (schematicFile.exists()) {
+                schematicFile.delete();
+            }
+        }
+        
         arenas.remove(name);
         reservedArenas.remove(name);
 
@@ -452,8 +474,11 @@ public class ArenaManager {
     
     public boolean pasteSchematic(Arena arena) {
         try {
+            // For instance arenas, use the original arena's schematic
+            String schematicName = arena.isInstance() ? arena.getOriginalArena() : arena.getName();
+            
             File schematicsDir = new File(plugin.getDataFolder(), "schematics");
-            File schematicFile = new File(schematicsDir, arena.getName() + ".schem");
+            File schematicFile = new File(schematicsDir, schematicName + ".schem");
             
             if (!schematicFile.exists()) {
                 plugin.getLogger().warning("Schematic file not found: " + schematicFile.getPath());
@@ -503,5 +528,32 @@ public class ArenaManager {
     
     public Map<String, Arena> getArenas() {
         return new HashMap<>(arenas);
+    }
+    
+    public int getInstanceCount(String baseArenaName) {
+        int count = 0;
+        for (Arena arena : arenas.values()) {
+            if (arena.isInstance() && baseArenaName.equals(arena.getOriginalArena())) {
+                count++;
+            }
+        }
+        return count;
+    }
+    
+    public void cleanupUnusedInstances() {
+        // This method can be called periodically to clean up unused instance arenas
+        List<String> toRemove = new ArrayList<>();
+        
+        for (Arena arena : arenas.values()) {
+            if (arena.isInstance() && !reservedArenas.contains(arena.getName())) {
+                // Check if this instance has been unused for a while
+                // For now, we'll keep all instances for future use
+                // You could add logic here to remove old unused instances
+            }
+        }
+        
+        for (String arenaName : toRemove) {
+            deleteArena(arenaName);
+        }
     }
 }

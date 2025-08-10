@@ -5,6 +5,7 @@ import me.moiz.mangoparty.config.ConfigManager;
 import me.moiz.mangoparty.gui.GuiManager;
 import me.moiz.mangoparty.gui.ArenaEditorGui;
 import me.moiz.mangoparty.gui.KitEditorGui;
+import me.moiz.mangoparty.gui.AllowedKitsGui;
 import me.moiz.mangoparty.listeners.*;
 import me.moiz.mangoparty.managers.*;
 import org.bukkit.Bukkit;
@@ -24,6 +25,7 @@ public final class MangoParty extends JavaPlugin {
     private QueueManager queueManager;
     private ArenaEditorGui arenaEditorGui;
     private KitEditorGui kitEditorGui;
+    private AllowedKitsGui allowedKitsGui;
     
     // Listeners
     private PlayerConnectionListener playerConnectionListener;
@@ -52,6 +54,7 @@ public final class MangoParty extends JavaPlugin {
         queueManager = new QueueManager(this);
         arenaEditorGui = new ArenaEditorGui(this);
         kitEditorGui = new KitEditorGui(this);
+        allowedKitsGui = new AllowedKitsGui(this);
         
         // Initialize listeners
         playerConnectionListener = new PlayerConnectionListener(this);
@@ -167,4 +170,5 @@ public final class MangoParty extends JavaPlugin {
     public KitEditorGui getKitEditorGui() { return kitEditorGui; }
     public SpectatorListener getSpectatorListener() { return spectatorListener; }
     public Location getSpawnLocation() { return spawnLocation; }
+    public AllowedKitsGui getAllowedKitsGui() { return allowedKitsGui; }
 }

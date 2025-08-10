@@ -13,6 +13,7 @@ public class Arena {
     private String worldName;
     private Location corner1;
     private Location corner2;
+    private Location center;
     private Location spawn1;
     private Location spawn2;
     private Location spectatorSpawn;
@@ -21,12 +22,23 @@ public class Arena {
     private String schematicName;
     private boolean isInstance;
     private String baseArena;
+    private int instanceNumber;
+    private double xOffset;
+    private double zOffset;
     
     public Arena(String name) {
         this.name = name;
         this.allowedKits = new ArrayList<>();
         this.inUse = false;
         this.isInstance = false;
+        this.instanceNumber = 0;
+        this.xOffset = 0;
+        this.zOffset = 0;
+    }
+    
+    public Arena(String name, String worldName) {
+        this(name);
+        this.worldName = worldName;
     }
     
     // Basic getters and setters
@@ -46,7 +58,11 @@ public class Arena {
         this.worldName = worldName;
     }
     
-    public World getWorld() {
+    public String getWorld() {
+        return worldName;
+    }
+    
+    public World getBukkitWorld() {
         return worldName != null ? Bukkit.getWorld(worldName) : null;
     }
     
@@ -69,6 +85,17 @@ public class Arena {
         this.corner2 = corner2;
         if (corner2 != null) {
             this.worldName = corner2.getWorld().getName();
+        }
+    }
+    
+    public Location getCenter() {
+        return center;
+    }
+    
+    public void setCenter(Location center) {
+        this.center = center;
+        if (center != null) {
+            this.worldName = center.getWorld().getName();
         }
     }
     
@@ -150,18 +177,85 @@ public class Arena {
         this.baseArena = baseArena;
     }
     
-    public boolean isComplete() {
-        return corner1 != null && corner2 != null && spawn1 != null && spawn2 != null;
+    public String getOriginalArena() {
+        return baseArena;
     }
     
-    public Location getCenter() {
-        if (corner1 == null || corner2 == null) return null;
-        
-        double x = (corner1.getX() + corner2.getX()) / 2;
-        double y = (corner1.getY() + corner2.getY()) / 2;
-        double z = (corner1.getZ() + corner2.getZ()) / 2;
-        
-        return new Location(corner1.getWorld(), x, y, z);
+    public void setOriginalArena(String originalArena) {
+        this.baseArena = originalArena;
+    }
+    
+    public int getInstanceNumber() {
+        return instanceNumber;
+    }
+    
+    public void setInstanceNumber(int instanceNumber) {
+        this.instanceNumber = instanceNumber;
+    }
+    
+    public double getXOffset() {
+        return xOffset;
+    }
+    
+    public void setXOffset(double xOffset) {
+        this.xOffset = xOffset;
+    }
+    
+    public double getZOffset() {
+        return zOffset;
+    }
+    
+    public void setZOffset(double zOffset) {
+        this.zOffset = zOffset;
+    }
+    
+    public boolean isComplete() {
+        return corner1 != null && corner2 != null && spawn1 != null && spawn2 != null && center != null;
+    }
+    
+    // Calculate relative offsets from center
+    public Location getSpawn1Offset() {
+        if (spawn1 == null || center == null) return null;
+        return new Location(
+            spawn1.getWorld(),
+            spawn1.getX() - center.getX(),
+            spawn1.getY() - center.getY(),
+            spawn1.getZ() - center.getZ(),
+            spawn1.getYaw(),
+            spawn1.getPitch()
+        );
+    }
+    
+    public Location getSpawn2Offset() {
+        if (spawn2 == null || center == null) return null;
+        return new Location(
+            spawn2.getWorld(),
+            spawn2.getX() - center.getX(),
+            spawn2.getY() - center.getY(),
+            spawn2.getZ() - center.getZ(),
+            spawn2.getYaw(),
+            spawn2.getPitch()
+        );
+    }
+    
+    public Location getCorner1Offset() {
+        if (corner1 == null || center == null) return null;
+        return new Location(
+            corner1.getWorld(),
+            corner1.getX() - center.getX(),
+            corner1.getY() - center.getY(),
+            corner1.getZ() - center.getZ()
+        );
+    }
+    
+    public Location getCorner2Offset() {
+        if (corner2 == null || center == null) return null;
+        return new Location(
+            corner2.getWorld(),
+            corner2.getX() - center.getX(),
+            corner2.getY() - center.getY(),
+            corner2.getZ() - center.getZ()
+        );
     }
     
     public void saveToConfig(ConfigurationSection section) {
@@ -169,6 +263,9 @@ public class Arena {
         section.set("isInstance", isInstance);
         section.set("baseArena", baseArena);
         section.set("schematicName", schematicName);
+        section.set("instanceNumber", instanceNumber);
+        section.set("xOffset", xOffset);
+        section.set("zOffset", zOffset);
         
         if (corner1 != null) {
             section.set("corner1.x", corner1.getX());
@@ -180,6 +277,12 @@ public class Arena {
             section.set("corner2.x", corner2.getX());
             section.set("corner2.y", corner2.getY());
             section.set("corner2.z", corner2.getZ());
+        }
+        
+        if (center != null) {
+            section.set("center.x", center.getX());
+            section.set("center.y", center.getY());
+            section.set("center.z", center.getZ());
         }
         
         if (spawn1 != null) {
@@ -216,8 +319,11 @@ public class Arena {
         arena.isInstance = section.getBoolean("isInstance", false);
         arena.baseArena = section.getString("baseArena");
         arena.schematicName = section.getString("schematicName");
+        arena.instanceNumber = section.getInt("instanceNumber", 0);
+        arena.xOffset = section.getDouble("xOffset", 0);
+        arena.zOffset = section.getDouble("zOffset", 0);
         
-        World world = arena.getWorld();
+        World world = arena.getBukkitWorld();
         if (world != null) {
             if (section.contains("corner1")) {
                 arena.corner1 = new Location(world,
@@ -231,6 +337,13 @@ public class Arena {
                     section.getDouble("corner2.x"),
                     section.getDouble("corner2.y"),
                     section.getDouble("corner2.z"));
+            }
+            
+            if (section.contains("center")) {
+                arena.center = new Location(world,
+                    section.getDouble("center.x"),
+                    section.getDouble("center.y"),
+                    section.getDouble("center.z"));
             }
             
             if (section.contains("spawn1")) {

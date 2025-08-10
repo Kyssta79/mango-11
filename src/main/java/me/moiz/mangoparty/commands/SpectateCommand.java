@@ -2,6 +2,7 @@ package me.moiz.mangoparty.commands;
 
 import me.moiz.mangoparty.MangoParty;
 import me.moiz.mangoparty.models.Match;
+import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -29,14 +30,14 @@ public class SpectateCommand implements CommandExecutor {
             return true;
         }
         
-        Player target = plugin.getServer().getPlayer(args[0]);
+        Player target = Bukkit.getPlayer(args[0]);
         if (target == null || !target.isOnline()) {
             player.sendMessage("§cPlayer not found or not online!");
             return true;
         }
         
         // Check if target is in a match
-        Match targetMatch = plugin.getMatchManager().getPlayerMatch(target.getUniqueId());
+        Match targetMatch = plugin.getMatchManager().getPlayerMatch(target);
         if (targetMatch == null) {
             player.sendMessage("§c" + target.getName() + " is not currently in a match!");
             return true;
@@ -49,7 +50,7 @@ public class SpectateCommand implements CommandExecutor {
         }
         
         // Check if spectator is in a different match (prevent cross-match spectating for anti-cheat)
-        Match spectatorMatch = plugin.getMatchManager().getPlayerMatch(player.getUniqueId());
+        Match spectatorMatch = plugin.getMatchManager().getPlayerMatch(player);
         if (spectatorMatch != null && !spectatorMatch.equals(targetMatch)) {
             player.sendMessage("§cYou cannot spectate players in other matches while you're in a match!");
             return true;

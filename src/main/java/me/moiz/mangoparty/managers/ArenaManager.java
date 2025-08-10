@@ -14,10 +14,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ArenaManager {
     private MangoParty plugin;
     private Map<String, Arena> arenas;
+    private Set<String> reservedArenas;
     private YamlConfiguration arenasConfig;
     private File arenasFile;
     private int instanceCounter = 0;
@@ -25,6 +28,7 @@ public class ArenaManager {
     public ArenaManager(MangoParty plugin) {
         this.plugin = plugin;
         this.arenas = new HashMap<>();
+        this.reservedArenas = ConcurrentHashMap.newKeySet();
         loadArenas();
     }
     
@@ -65,6 +69,13 @@ public class ArenaManager {
         }
     }
     
+    public void saveArena(Arena arena) {
+        if (arena != null) {
+            arenas.put(arena.getName(), arena);
+            saveArenas();
+        }
+    }
+    
     public void reloadArenas() {
         arenas.clear();
         loadArenas();
@@ -81,9 +92,21 @@ public class ArenaManager {
         return arena;
     }
     
+    public Arena createArena(String name, String worldName) {
+        if (arenas.containsKey(name)) {
+            return null;
+        }
+        
+        Arena arena = new Arena(name, worldName);
+        arenas.put(name, arena);
+        saveArenas();
+        return arena;
+    }
+    
     public boolean deleteArena(String name) {
         Arena arena = arenas.remove(name);
         if (arena != null) {
+            reservedArenas.remove(name);
             saveArenas();
             return true;
         }
@@ -104,7 +127,7 @@ public class ArenaManager {
     
     public Arena getAvailableArena() {
         for (Arena arena : arenas.values()) {
-            if (arena.isComplete() && !arena.isInUse()) {
+            if (arena.isComplete() && !reservedArenas.contains(arena.getName())) {
                 return arena;
             }
         }
@@ -113,7 +136,7 @@ public class ArenaManager {
     
     public Arena getAvailableArenaForKit(String kitName) {
         for (Arena arena : arenas.values()) {
-            if (arena.isComplete() && !arena.isInUse() && arena.isKitAllowed(kitName)) {
+            if (arena.isComplete() && !reservedArenas.contains(arena.getName()) && arena.isKitAllowed(kitName)) {
                 return arena;
             }
         }
@@ -139,11 +162,11 @@ public class ArenaManager {
         instanceCounter++;
         String instanceName = baseArena.getName() + "_instance_" + instanceCounter;
         
-        Arena instance = new Arena(instanceName);
+        Arena instance = new Arena(instanceName, baseArena.getWorldName());
         instance.setInstance(true);
         instance.setBaseArena(baseArena.getName());
         instance.setSchematicName(baseArena.getSchematicName());
-        instance.setWorldName(baseArena.getWorldName());
+        instance.setInstanceNumber(instanceCounter);
         instance.setAllowedKits(new ArrayList<>(baseArena.getAllowedKits()));
         
         // Calculate offset position (200 blocks away)
@@ -154,34 +177,40 @@ public class ArenaManager {
         }
         
         // Calculate offset based on instance number to avoid overlaps
-        int offsetX = 200 * (instanceCounter % 10);
-        int offsetZ = 200 * (instanceCounter / 10);
+        double offsetX = 200.0 * instanceCounter;
+        double offsetZ = 0.0;
         
         Location instanceCenter = baseCenter.clone().add(offsetX, 0, offsetZ);
+        instance.setCenter(instanceCenter);
         
         // Calculate all positions relative to the new center
-        Location baseCorner1 = baseArena.getCorner1();
-        Location baseCorner2 = baseArena.getCorner2();
-        Location baseSpawn1 = baseArena.getSpawn1();
-        Location baseSpawn2 = baseArena.getSpawn2();
-        Location baseSpectatorSpawn = baseArena.getSpectatorSpawn();
+        if (baseArena.getCorner1() != null && baseArena.getCorner2() != null) {
+            Location corner1Offset = baseArena.getCorner1Offset();
+            Location corner2Offset = baseArena.getCorner2Offset();
+            
+            if (corner1Offset != null && corner2Offset != null) {
+                instance.setCorner1(instanceCenter.clone().add(corner1Offset.getX(), corner1Offset.getY(), corner1Offset.getZ()));
+                instance.setCorner2(instanceCenter.clone().add(corner2Offset.getX(), corner2Offset.getY(), corner2Offset.getZ()));
+            }
+        }
         
-        if (baseCorner1 != null && baseCorner2 != null) {
-            Location offset = instanceCenter.subtract(baseCenter);
-            
-            instance.setCorner1(baseCorner1.clone().add(offset));
-            instance.setCorner2(baseCorner2.clone().add(offset));
-            
-            if (baseSpawn1 != null) {
-                instance.setSpawn1(baseSpawn1.clone().add(offset));
+        if (baseArena.getSpawn1() != null) {
+            Location spawn1Offset = baseArena.getSpawn1Offset();
+            if (spawn1Offset != null) {
+                Location newSpawn1 = instanceCenter.clone().add(spawn1Offset.getX(), spawn1Offset.getY(), spawn1Offset.getZ());
+                newSpawn1.setYaw(spawn1Offset.getYaw());
+                newSpawn1.setPitch(spawn1Offset.getPitch());
+                instance.setSpawn1(newSpawn1);
             }
-            
-            if (baseSpawn2 != null) {
-                instance.setSpawn2(baseSpawn2.clone().add(offset));
-            }
-            
-            if (baseSpectatorSpawn != null) {
-                instance.setSpectatorSpawn(baseSpectatorSpawn.clone().add(offset));
+        }
+        
+        if (baseArena.getSpawn2() != null) {
+            Location spawn2Offset = baseArena.getSpawn2Offset();
+            if (spawn2Offset != null) {
+                Location newSpawn2 = instanceCenter.clone().add(spawn2Offset.getX(), spawn2Offset.getY(), spawn2Offset.getZ());
+                newSpawn2.setYaw(spawn2Offset.getYaw());
+                newSpawn2.setPitch(spawn2Offset.getPitch());
+                instance.setSpawn2(newSpawn2);
             }
         }
         
@@ -204,6 +233,41 @@ public class ArenaManager {
         // This would integrate with WorldEdit or similar plugin to paste schematics
         // For now, just log the action
         plugin.getLogger().info("Would paste schematic " + arena.getSchematicName() + " for arena " + arena.getName());
+    }
+    
+    public boolean saveSchematic(Arena arena) {
+        if (arena == null || !arena.isComplete()) {
+            return false;
+        }
+        
+        // This would integrate with WorldEdit to save schematics
+        // For now, just set the schematic name and return true
+        arena.setSchematicName(arena.getName());
+        saveArena(arena);
+        plugin.getLogger().info("Saved schematic for arena: " + arena.getName());
+        return true;
+    }
+    
+    public void reserveArena(String arenaName) {
+        reservedArenas.add(arenaName);
+        Arena arena = arenas.get(arenaName);
+        if (arena != null) {
+            arena.setInUse(true);
+        }
+        plugin.getLogger().info("Reserved arena: " + arenaName);
+    }
+    
+    public void releaseArena(String arenaName) {
+        reservedArenas.remove(arenaName);
+        Arena arena = arenas.get(arenaName);
+        if (arena != null) {
+            arena.setInUse(false);
+        }
+        plugin.getLogger().info("Released arena: " + arenaName);
+    }
+    
+    public boolean isArenaReserved(String arenaName) {
+        return reservedArenas.contains(arenaName);
     }
     
     public void setArenaInUse(String arenaName, boolean inUse) {

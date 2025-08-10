@@ -391,7 +391,7 @@ public class GuiManager implements Listener {
                     openPartyVsPartyKitGui(player, targetLeader);
                 }
             }
-        } else if (title.contains("Kit Selection") || title.contains("Select Kit")) {
+        } else if (isKitSelectionGui(title)) {
             event.setCancelled(true);
             
             ItemStack clicked = event.getCurrentItem();
@@ -404,11 +404,25 @@ public class GuiManager implements Listener {
                 handleQueueKitSelection(player, title, event.getSlot());
             } else if (title.contains("Party Duel")) {
                 handlePartyDuelKitSelection(player, event.getSlot());
-            } else if (title.contains("Split") || title.contains("FFA")) {
+            } else {
+                // This handles split, ffa, and any other kit selection GUIs
                 plugin.getLogger().info("Handling regular kit selection");
                 handleRegularKitSelection(player, title, event.getSlot());
             }
         }
+    }
+    
+    private boolean isKitSelectionGui(String title) {
+        // Check for various kit selection GUI patterns
+        return title.contains("Kit Selection") || 
+               title.contains("Select Kit") || 
+               title.contains("Split") || 
+               title.contains("FFA") || 
+               title.contains("Duels") ||
+               title.contains("Party Duel") ||
+               title.contains("1V1") || 
+               title.contains("2V2") || 
+               title.contains("3V3");
     }
     
     private void handleQueueKitSelection(Player player, String title, int slot) {
@@ -459,8 +473,17 @@ public class GuiManager implements Listener {
     private void handleRegularKitSelection(Player player, String title, int slot) {
         plugin.getLogger().info("Kit selection - Player: " + player.getName() + ", Title: " + title + ", Slot: " + slot);
         
-        String matchType = title.contains("Split") ? "split" : "ffa";
-        YamlConfiguration config = "split".equalsIgnoreCase(matchType) ? splitConfig : ffaConfig;
+        // Determine match type based on title
+        String matchType = "split"; // default
+        YamlConfiguration config = splitConfig; // default
+        
+        if (title.toLowerCase().contains("ffa")) {
+            matchType = "ffa";
+            config = ffaConfig;
+        } else if (title.toLowerCase().contains("split") || title.toLowerCase().contains("duels")) {
+            matchType = "split";
+            config = splitConfig;
+        }
         
         plugin.getLogger().info("Match type: " + matchType);
         

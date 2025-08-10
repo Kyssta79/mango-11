@@ -114,17 +114,27 @@ public class AllowedKitsGui implements Listener {
         Player player = (Player) event.getWhoClicked();
         String title = event.getView().getTitle();
         
-        if (!title.startsWith(allowedKitsConfig.getString("title", "§6Allowed Kits").split(" - ")[0])) {
+        // Check if this is an allowed kits GUI
+        String configTitle = allowedKitsConfig.getString("title", "§6Allowed Kits");
+        String titlePrefix = configTitle.split(" - ")[0];
+        
+        if (!title.startsWith(titlePrefix)) {
             return;
         }
         
         event.setCancelled(true);
         
         String arenaName = extractArenaNameFromTitle(title);
-        if (arenaName == null) return;
+        if (arenaName == null) {
+            plugin.getLogger().warning("Could not extract arena name from title: " + title);
+            return;
+        }
         
         Arena arena = plugin.getArenaManager().getArena(arenaName);
-        if (arena == null) return;
+        if (arena == null) {
+            player.sendMessage("§cArena not found: " + arenaName);
+            return;
+        }
         
         ItemStack clicked = event.getCurrentItem();
         if (clicked == null || clicked.getType() == Material.AIR) return;
@@ -139,16 +149,28 @@ public class AllowedKitsGui implements Listener {
         // Handle kit toggle
         String kitName = extractKitName(clicked);
         if (kitName != null) {
+            boolean wasAllowed = arena.isKitAllowed(kitName);
             toggleKitAllowed(arena, kitName);
+            
+            // Save the arena immediately
             plugin.getArenaManager().saveArena(arena);
             
-            // Refresh the GUI
-            openAllowedKitsGui(player, arenaName);
+            // Log the change
+            plugin.getLogger().info("Player " + player.getName() + " " + 
+                (wasAllowed ? "disabled" : "enabled") + " kit " + kitName + 
+                " for arena " + arenaName);
+            
+            // Refresh the GUI to show the change
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                openAllowedKitsGui(player, arenaName);
+            }, 1L);
         }
     }
     
     private String extractArenaNameFromTitle(String title) {
-        String prefix = allowedKitsConfig.getString("title", "§6Allowed Kits").split(" - ")[0];
+        String configTitle = allowedKitsConfig.getString("title", "§6Allowed Kits - {arena_name}");
+        String prefix = configTitle.replace(" - {arena_name}", "");
+        
         if (title.startsWith(prefix + " - ")) {
             return title.substring((prefix + " - ").length());
         }
@@ -156,17 +178,21 @@ public class AllowedKitsGui implements Listener {
     }
     
     private String extractKitName(ItemStack item) {
-        if (item.hasItemMeta() && item.getItemMeta().hasDisplayName()) {
-            String displayName = item.getItemMeta().getDisplayName();
-            // Remove color codes
-            displayName = displayName.substring(2);
-            
-            for (Kit kit : plugin.getKitManager().getKits().values()) {
-                if (displayName.equals(kit.getDisplayName())) {
-                    return kit.getName();
-                }
+        if (!item.hasItemMeta() || !item.getItemMeta().hasDisplayName()) {
+            return null;
+        }
+        
+        String displayName = item.getItemMeta().getDisplayName();
+        // Remove color codes
+        displayName = displayName.replaceAll("§[0-9a-fk-or]", "");
+        
+        // Try to find kit by display name
+        for (Kit kit : plugin.getKitManager().getKits().values()) {
+            if (displayName.equals(kit.getDisplayName())) {
+                return kit.getName();
             }
         }
+        
         return null;
     }
     

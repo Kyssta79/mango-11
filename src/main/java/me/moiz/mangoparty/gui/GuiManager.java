@@ -4,7 +4,6 @@ import me.moiz.mangoparty.MangoParty;
 import me.moiz.mangoparty.models.Arena;
 import me.moiz.mangoparty.models.Kit;
 import me.moiz.mangoparty.models.Party;
-import me.moiz.mangoparty.models.QueueEntry;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
@@ -93,7 +92,7 @@ public class GuiManager implements Listener {
         // Handle party duel GUI
         if (title.contains("Party Duel")) {
             event.setCancelled(true);
-            Party party = plugin.getPartyManager().getParty(player.getUniqueId());
+            Party party = plugin.getPartyManager().getParty(player);
             if (party == null || !party.isLeader(player.getUniqueId())) {
                 player.sendMessage("§cYou must be a party leader to use this!");
                 return;
@@ -106,7 +105,7 @@ public class GuiManager implements Listener {
             Kit kit = getKitFromItem(clicked, "duel");
             if (kit != null) {
                 // Open party vs party GUI or handle duel logic
-                plugin.getPartyDuelManager().handleDuelRequest(player, kit);
+                plugin.getPartyDuelManager().challengeParty(player, player, kit.getName());
             }
             return;
         }
@@ -175,7 +174,7 @@ public class GuiManager implements Listener {
     }
     
     private void handleRegularKitSelection(Player player, Kit kit, String matchType) {
-        Party party = plugin.getPartyManager().getParty(player.getUniqueId());
+        Party party = plugin.getPartyManager().getParty(player);
         if (party == null) {
             player.sendMessage("§cYou must be in a party to start a match!");
             return;
@@ -205,7 +204,7 @@ public class GuiManager implements Listener {
     private void handleQueueKitSelection(Player player, Kit kit, String queueType) {
         String mode = queueType.replace("kits", "");
         
-        Party party = plugin.getPartyManager().getParty(player.getUniqueId());
+        Party party = plugin.getPartyManager().getParty(player);
         if (party == null) {
             player.sendMessage("§cYou must be in a party to join queue!");
             return;
@@ -216,8 +215,7 @@ public class GuiManager implements Listener {
             return;
         }
         
-        QueueEntry entry = new QueueEntry(party, kit, mode);
-        plugin.getQueueManager().addToQueue(entry);
+        plugin.getQueueManager().joinQueue(player, mode, kit.getName());
         
         player.closeInventory();
         player.sendMessage("§aJoined " + mode.toUpperCase() + " queue with kit: " + kit.getDisplayName());
